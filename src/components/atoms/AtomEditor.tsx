@@ -218,6 +218,34 @@ export function AtomEditor({ atomId, onSaved }: AtomEditorProps) {
   selectedTagsRef.current = selectedTags;
   onSavedRef.current = onSaved;
 
+  // Debounced background save while typing (silent, doesn't affect focus)
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!content.trim()) return;
+
+    // Clear existing timer
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+
+    // Set new timer for debounced save
+    saveTimerRef.current = setTimeout(() => {
+      const c = contentRef.current;
+      const url = sourceUrlRef.current;
+      const tags = selectedTagsRef.current;
+      if (!c.trim()) return;
+
+      const tagIds = tags.map((t) => t.id);
+      const validUrl = url && isValidUrl(url) ? url : undefined;
+      const save = isEditing
+        ? updateAtom(atomId!, c, validUrl, tagIds)
+        : createAtom(c, validUrl, tagIds);
+      save.catch((e) => console.error('Auto-save failed:', e));
+    }, 2000); // 2 second debounce
+
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, [content, selectedTags, sourceUrl, isEditing, atomId, updateAtom, createAtom]);
+
   useEffect(() => {
     return () => {
       const c = contentRef.current;
@@ -231,7 +259,7 @@ export function AtomEditor({ atomId, onSaved }: AtomEditorProps) {
         : createAtom(c, validUrl, tagIds);
       save
         .then((savedAtom) => { onSavedRef.current?.(savedAtom); return fetchTags(); })
-        .catch((e) => console.error('Auto-save failed:', e));
+        .catch((e) => console.error('Auto-save on close failed:', e));
     };
   }, []);
 
@@ -245,7 +273,7 @@ export function AtomEditor({ atomId, onSaved }: AtomEditorProps) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Editor */}
+      {/* Editor - takes all available space */}
       <div className="flex-1 overflow-auto milkdown-editor-wrapper">
         {editorReady && (
           <MilkdownProvider>
@@ -277,7 +305,7 @@ export function AtomEditor({ atomId, onSaved }: AtomEditorProps) {
           value={sourceUrl}
           onChange={(e) => setSourceUrl(e.target.value)}
           placeholder="Source URL"
-          className="bg-transparent border-none outline-none text-sm text-[var(--color-text-secondary)] placeholder:text-[var(--color-text-tertiary)] text-right shrink-0 w-[200px] focus:text-[var(--color-text-primary)]"
+          className="shrink-0 w-[220px] px-3 py-1.5 text-sm text-right rounded-lg bg-white/8 backdrop-blur-sm border border-white/10 text-[var(--color-text-secondary)] placeholder:text-[var(--color-text-tertiary)] focus:outline-none focus:text-[var(--color-text-primary)] focus:border-white/20 focus:bg-white/12 transition-all duration-200"
         />
       </div>
     </div>

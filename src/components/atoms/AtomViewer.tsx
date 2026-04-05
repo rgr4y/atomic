@@ -53,6 +53,7 @@ export function AtomViewer({ atom, onClose, onEdit, highlightText }: AtomViewerP
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [metadataExpanded, setMetadataExpanded] = useState(false);
+  const [showCreatedDate, setShowCreatedDate] = useState(true);
 
   // Initial highlight state (from semantic search)
   const [initialHighlight, setInitialHighlight] = useState<string | null>(null);
@@ -390,6 +391,13 @@ export function AtomViewer({ atom, onClose, onEdit, highlightText }: AtomViewerP
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
+        </button>
+        {/* Date toggle - Created vs Updated */}
+        <button
+          onClick={() => setShowCreatedDate(!showCreatedDate)}
+          className="text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors py-1 px-2 hover:bg-[var(--color-bg-hover)] rounded"
+        >
+          {showCreatedDate ? 'Created' : 'Edited'}: {formatDate(showCreatedDate ? atom.created_at : atom.updated_at)}
         </button>
         <div className="flex items-center gap-2">
           {atom.embedding_status === 'complete' && (

@@ -262,6 +262,8 @@ article, .prose, .select-text {
 .milkdown-editor-wrapper {
   display: flex;
   flex-direction: column;
+  width: 100%;
+  height: 100%;
 }
 
 .milkdown-editor-wrapper .milkdown {
@@ -277,7 +279,7 @@ article, .prose, .select-text {
 }
 
 .milkdown-editor-wrapper .ProseMirror {
-  min-height: 100%;
+  height: 100%;
   padding: 1.5rem;
   outline: none;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
@@ -323,6 +325,14 @@ article, .prose, .select-text {
 
 .milkdown-editor-wrapper .ProseMirror p {
   margin-bottom: 0.5em;
+}
+
+/* First paragraph as title when it's the only content (Apple Notes style) */
+.milkdown-editor-wrapper .ProseMirror > p:first-child:last-child {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #f0f0f0;
+  margin-bottom: 0;
 }
 
 .milkdown-editor-wrapper .ProseMirror a {

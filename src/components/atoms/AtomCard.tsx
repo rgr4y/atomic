@@ -153,7 +153,7 @@ export const AtomCard = memo(function AtomCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-baseline gap-2">
             <span
-              className={`text-sm font-medium shrink-0 ${
+              className={`text-base font-medium shrink-0 ${
                 matchingChunkContent ? 'text-[var(--color-accent-light)]' : 'text-[var(--color-text-primary)]'
               }`}
             >
@@ -204,7 +204,7 @@ export const AtomCard = memo(function AtomCard({
       <div className="flex-1 min-h-0 overflow-hidden">
         <div className="flex items-baseline justify-between gap-2">
           <p
-            className={`text-sm font-medium line-clamp-1 min-w-0 ${
+            className={`text-lg font-semibold line-clamp-1 min-w-0 ${
               matchingChunkContent ? 'text-[var(--color-accent-light)]' : 'text-[var(--color-text-primary)]'
             }`}
           >

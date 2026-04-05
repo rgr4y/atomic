@@ -55,15 +55,15 @@ export function Layout() {
       // Skip other shortcuts if input is active
       if (isInputActive) return;
 
-      // "/" to open command palette in search mode
-      if (e.key === '/' && !commandPaletteOpen) {
+      // "/" to open command palette in search mode (but not in editor)
+      if (e.key === '/' && !commandPaletteOpen && !isInputActive) {
         e.preventDefault();
         openCommandPalette('/');
         return;
       }
 
-      // "#" to open command palette in tag filter mode
-      if (e.key === '#' && !commandPaletteOpen) {
+      // "#" to open command palette in tag filter mode (but not in editor)
+      if (e.key === '#' && !commandPaletteOpen && !isInputActive) {
         e.preventDefault();
         openCommandPalette('#');
         return;
