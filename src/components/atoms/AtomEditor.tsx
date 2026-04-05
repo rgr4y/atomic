@@ -1,15 +1,11 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import CodeMirror from '@uiw/react-codemirror';
+import { markdown } from '@codemirror/lang-markdown';
+import { oneDark } from '@codemirror/theme-one-dark';
 import { getTransport } from '../../lib/transport';
-import { Editor, rootCtx, defaultValueCtx } from '@milkdown/kit/core';
-import { commonmark } from '@milkdown/kit/preset/commonmark';
-import { gfm } from '@milkdown/kit/preset/gfm';
-import { listener, listenerCtx } from '@milkdown/kit/plugin/listener';
-import { nord } from '@milkdown/theme-nord';
-import '@milkdown/theme-nord/style.css';
-import { Milkdown, MilkdownProvider, useEditor } from '@milkdown/react';
 import { TagChip } from '../tags/TagChip';
 import { useAtomsStore, AtomWithTags, Tag } from '../../stores/atoms';
-import { useTagsStore, TagWithCount } from '../../stores/tags';
+import { useTagsStore } from '../../stores/tags';
 import { isValidUrl } from '../../lib/markdown';
 
 interface AtomEditorProps {
@@ -18,62 +14,18 @@ interface AtomEditorProps {
   onSaved?: (atom: AtomWithTags) => void;
 }
 
-interface MilkdownEditorInnerProps {
-  initialContent: string;
-  onChange: (markdown: string) => void;
-}
-
-function MilkdownEditorInner({ initialContent, onChange }: MilkdownEditorInnerProps) {
-  useEditor((root) =>
-    Editor.make()
-      .config((ctx) => {
-        ctx.set(rootCtx, root);
-        ctx.set(defaultValueCtx, initialContent);
-        ctx.get(listenerCtx).markdownUpdated((_ctx, markdown, prevMarkdown) => {
-          if (markdown !== prevMarkdown) {
-            onChange(markdown);
-          }
-        });
-      })
-      .config(nord)
-      .use(commonmark)
-      .use(gfm)
-      .use(listener),
-    [initialContent]
-  );
-
-  return <Milkdown />;
-}
-
 // Inline tag input — just the text input with dropdown, chips rendered by parent
 function InlineTagInput({ selectedTags, onTagsChange }: { selectedTags: Tag[]; onTagsChange: (tags: Tag[]) => void }) {
   const tags = useTagsStore(s => s.tags);
-  const createTag = useTagsStore(s => s.createTag);
   const [inputValue, setInputValue] = useState('');
-  const [isCreating, setIsCreating] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
 
-  const flattenTags = (tags: TagWithCount[]): Tag[] => {
-    return tags.reduce<Tag[]>((acc, tag) => {
-      acc.push({ id: tag.id, name: tag.name, parent_id: tag.parent_id, created_at: tag.created_at });
-      if (tag.children) acc.push(...flattenTags(tag.children));
-      return acc;
-    }, []);
-  };
+  const filtered = tags.filter(t =>
+    !selectedTags.find(st => st.id === t.id) &&
+    t.name.toLowerCase().includes(inputValue.toLowerCase())
+  );
 
-  const allTags = useMemo(() => flattenTags(tags), [tags]);
-  const selectedTagIds = new Set(selectedTags.map(t => t.id));
-
-  const filtered = useMemo(() => {
-    if (!inputValue.trim()) return [];
-    const q = inputValue.toLowerCase();
-    return allTags
-      .filter(t => !selectedTagIds.has(t.id) && t.name.toLowerCase().includes(q))
-      .slice(0, 8);
-  }, [allTags, inputValue, selectedTagIds]);
-
-  const exactMatch = allTags.some(t => t.name.toLowerCase() === inputValue.trim().toLowerCase());
+  const exactMatch = filtered.some(t => t.name.toLowerCase() === inputValue.toLowerCase());
 
   const addTag = (tag: Tag) => {
     onTagsChange([...selectedTags, tag]);
@@ -81,48 +33,33 @@ function InlineTagInput({ selectedTags, onTagsChange }: { selectedTags: Tag[]; o
     setShowDropdown(false);
   };
 
-  const commitInput = async () => {
-    const val = inputValue.trim();
-    if (!val || isCreating) return;
-
-    const existing = allTags.find(t => t.name.toLowerCase() === val.toLowerCase() && !selectedTagIds.has(t.id));
-    if (existing) {
-      addTag(existing);
-      return;
-    }
-
-    if (!exactMatch) {
-      setIsCreating(true);
-      try {
-        const newTag = await createTag(val);
-        onTagsChange([...selectedTags, newTag]);
-        setInputValue('');
-        setShowDropdown(false);
-      } catch (e) {
-        console.error('Failed to create tag:', e);
-      } finally {
-        setIsCreating(false);
-      }
+  const commitInput = () => {
+    if (inputValue.trim() && !exactMatch) {
+      // Just commit the input to the tag input - user can save later
+      setInputValue('');
+      setShowDropdown(false);
     }
   };
 
   return (
     <div className="relative">
       <input
-        ref={inputRef}
+        type="text"
         value={inputValue}
-        onChange={e => { setInputValue(e.target.value); setShowDropdown(true); }}
-        onKeyDown={e => {
+        onChange={(e) => {
+          setInputValue(e.target.value);
+          setShowDropdown(true);
+        }}
+        onKeyDown={(e) => {
           if (e.key === 'Enter') {
             e.preventDefault();
             if (filtered.length > 0) {
               addTag(filtered[0]);
-            } else {
+            } else if (!exactMatch && inputValue.trim()) {
               commitInput();
             }
-          }
-          if (e.key === 'Backspace' && !inputValue && selectedTags.length > 0) {
-            onTagsChange(selectedTags.slice(0, -1));
+          } else if (e.key === 'Escape') {
+            setShowDropdown(false);
           }
         }}
         onFocus={() => setShowDropdown(true)}
@@ -172,7 +109,6 @@ export function AtomEditor({ atomId, onSaved }: AtomEditorProps) {
   const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
   const [existingAtom, setExistingAtom] = useState<AtomWithTags | null>(null);
   const [isLoadingAtom, setIsLoadingAtom] = useState(false);
-  const [editorReady, setEditorReady] = useState(false);
   const [isEditingUrl, setIsEditingUrl] = useState(false);
 
   const isEditing = atomId !== null;
@@ -192,7 +128,6 @@ export function AtomEditor({ atomId, onSaved }: AtomEditorProps) {
         });
     } else {
       setExistingAtom(null);
-      setEditorReady(true);
     }
   }, [isEditing, atomId]);
 
@@ -201,13 +136,8 @@ export function AtomEditor({ atomId, onSaved }: AtomEditorProps) {
       setContent(existingAtom.content);
       setSourceUrl(existingAtom.source_url || '');
       setSelectedTags(existingAtom.tags);
-      setEditorReady(true);
     }
   }, [existingAtom]);
-
-  const handleContentChange = useCallback((markdown: string) => {
-    setContent(markdown);
-  }, []);
 
   // Auto-save on unmount (when drawer closes, click outside, ESC, etc.)
   const contentRef = useRef(content);
@@ -219,15 +149,13 @@ export function AtomEditor({ atomId, onSaved }: AtomEditorProps) {
   selectedTagsRef.current = selectedTags;
   onSavedRef.current = onSaved;
 
-  // Debounced background save while typing (silent, doesn't affect focus)
+  // Debounced background save while typing
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!content.trim()) return;
 
-    // Clear existing timer
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
 
-    // Set new timer for debounced save
     saveTimerRef.current = setTimeout(() => {
       const c = contentRef.current;
       const url = sourceUrlRef.current;
@@ -240,7 +168,7 @@ export function AtomEditor({ atomId, onSaved }: AtomEditorProps) {
         ? updateAtom(atomId!, c, validUrl, tagIds)
         : createAtom(c, validUrl, tagIds);
       save.catch((e) => console.error('Auto-save failed:', e));
-    }, 2000); // 2 second debounce
+    }, 2000);
 
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -274,16 +202,19 @@ export function AtomEditor({ atomId, onSaved }: AtomEditorProps) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Editor - takes all available space */}
-      <div className="flex-1 overflow-auto milkdown-editor-wrapper">
-        {editorReady && (
-          <MilkdownProvider>
-            <MilkdownEditorInner
-              initialContent={content}
-              onChange={handleContentChange}
-            />
-          </MilkdownProvider>
-        )}
+      {/* Editor */}
+      <div className="flex-1 overflow-hidden">
+        <CodeMirror
+          value={content}
+          onChange={setContent}
+          theme={oneDark}
+          extensions={[markdown()]}
+          className="h-full"
+          basicSetup={{
+            lineNumbers: false,
+            foldGutter: false,
+          }}
+        />
       </div>
 
       {/* Bottom bar: tags left, source URL right */}
