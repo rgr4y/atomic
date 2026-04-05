@@ -28,10 +28,12 @@ impl ChunkStore for PostgresStorage {
         &self,
         atom_id: &str,
         status: &str,
+        error: Option<&str>,
     ) -> StorageResult<()> {
-        sqlx::query("UPDATE atoms SET embedding_status = $2 WHERE id = $1 AND db_id = $3")
+        sqlx::query("UPDATE atoms SET embedding_status = $2, embedding_error = $3 WHERE id = $1 AND db_id = $4")
             .bind(atom_id)
             .bind(status)
+            .bind(error)
             .bind(&self.db_id)
             .execute(&self.pool)
             .await
@@ -48,10 +50,12 @@ impl ChunkStore for PostgresStorage {
         &self,
         atom_id: &str,
         status: &str,
+        error: Option<&str>,
     ) -> StorageResult<()> {
-        sqlx::query("UPDATE atoms SET tagging_status = $2 WHERE id = $1 AND db_id = $3")
+        sqlx::query("UPDATE atoms SET tagging_status = $2, tagging_error = $3 WHERE id = $1 AND db_id = $4")
             .bind(atom_id)
             .bind(status)
+            .bind(error)
             .bind(&self.db_id)
             .execute(&self.pool)
             .await
@@ -153,6 +157,23 @@ impl ChunkStore for PostgresStorage {
         })?;
 
         Ok((embedding_result.rows_affected() + tagging_result.rows_affected()) as i32)
+    }
+
+    async fn reset_failed_embeddings(&self) -> StorageResult<i32> {
+        let result = sqlx::query(
+            "UPDATE atoms SET embedding_status = 'pending', embedding_error = NULL WHERE embedding_status = 'failed' AND db_id = $1",
+        )
+        .bind(&self.db_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| {
+            AtomicCoreError::DatabaseOperation(format!(
+                "Failed to reset failed embeddings: {}",
+                e
+            ))
+        })?;
+
+        Ok(result.rows_affected() as i32)
     }
 
     async fn rebuild_semantic_edges(&self) -> StorageResult<i32> {
@@ -396,11 +417,14 @@ impl ChunkStore for PostgresStorage {
             String,
             String,
             String,
+            Option<String>,
+            Option<String>,
         )> = sqlx::query_as(
             "SELECT id, content, title, snippet, source_url, source, published_at,
                     created_at, updated_at,
                     COALESCE(embedding_status, 'pending'),
-                    COALESCE(tagging_status, 'pending')
+                    COALESCE(tagging_status, 'pending'),
+                    embedding_error, tagging_error
              FROM atoms WHERE id = ANY($1) AND db_id = $2",
         )
         .bind(&atom_ids)
@@ -429,6 +453,8 @@ impl ChunkStore for PostgresStorage {
                     updated_at: r.8,
                     embedding_status: r.9,
                     tagging_status: r.10,
+                    embedding_error: r.11,
+                    tagging_error: r.12,
                 };
                 (r.0, atom)
             })

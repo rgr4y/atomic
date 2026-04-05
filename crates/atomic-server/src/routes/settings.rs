@@ -38,28 +38,19 @@ pub async fn set_setting(
         let on_event = crate::event_bridge::embedding_event_callback(state.event_tx.clone());
         match web::block(move || {
             let result = core.set_setting_with_reembed(&key, &value, on_event);
-            // If dimension changed, also recreate vector indexes on all other databases.
-            // Best-effort: failures here must not override the already-successful result.
-            if let Ok((true, _)) = &result {
-                match core.get_settings() {
-                    Ok(current_settings) => {
-                        let config = atomic_core::providers::ProviderConfig::from_settings(&current_settings);
-                        let new_dim = config.embedding_dimension();
-                        if let Err(e) = manager.recreate_other_vector_indexes(new_dim, &active_id) {
-                            tracing::error!("Failed to recreate vector indexes on other databases: {}", e);
-                        }
-                    }
-                    Err(e) => {
-                        tracing::error!("Failed to get settings for dimension calc: {}", e);
+            // Note: dimension changes no longer auto-re-embed. The frontend must
+            // show a confirmation dialog and call reembed_all_atoms explicitly.
+            // We still propagate dimension changes to other databases for consistency.
+            if let Ok(ref r) = &result {
+                if r.dimension_changed {
+                    if let Err(e) = manager.recreate_other_vector_indexes(r.new_dim, &active_id) {
+                        tracing::error!("Failed to recreate vector indexes on other databases: {}", e);
                     }
                 }
             }
             result
         }).await {
-            Ok(Ok((changed, count))) => HttpResponse::Ok().json(serde_json::json!({
-                "dimension_changed": changed,
-                "pending_reembed_count": count,
-            })),
+            Ok(Ok(result)) => HttpResponse::Ok().json(result),
             Ok(Err(e)) => crate::error::error_response(e),
             Err(e) => HttpResponse::InternalServerError()
                 .json(serde_json::json!({"error": e.to_string()})),

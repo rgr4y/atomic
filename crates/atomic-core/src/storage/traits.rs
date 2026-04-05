@@ -222,6 +222,7 @@ pub trait ChunkStore: Send + Sync {
         &self,
         atom_id: &str,
         status: &str,
+        error: Option<&str>,
     ) -> StorageResult<()>;
 
     /// Mark an atom's tagging status.
@@ -229,6 +230,7 @@ pub trait ChunkStore: Send + Sync {
         &self,
         atom_id: &str,
         status: &str,
+        error: Option<&str>,
     ) -> StorageResult<()>;
 
     /// Save chunks and their embeddings for an atom (replaces existing).
@@ -243,6 +245,9 @@ pub trait ChunkStore: Send + Sync {
 
     /// Reset atoms stuck in 'processing' status back to 'pending'.
     async fn reset_stuck_processing(&self) -> StorageResult<i32>;
+
+    /// Reset failed embedding atoms back to pending (for auto-retry on config fix).
+    async fn reset_failed_embeddings(&self) -> StorageResult<i32>;
 
     /// Rebuild semantic edges between all atoms with embeddings.
     async fn rebuild_semantic_edges(&self) -> StorageResult<i32>;
