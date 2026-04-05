@@ -2,8 +2,11 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import CodeMirror from '@uiw/react-codemirror';
 import { markdown } from '@codemirror/lang-markdown';
 import { oneDark } from '@codemirror/theme-one-dark';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { getTransport } from '../../lib/transport';
 import { TagChip } from '../tags/TagChip';
+import { MarkdownImage } from '../ui/MarkdownImage';
 import { useAtomsStore, AtomWithTags, Tag } from '../../stores/atoms';
 import { useTagsStore } from '../../stores/tags';
 import { isValidUrl } from '../../lib/markdown';
@@ -202,19 +205,36 @@ export function AtomEditor({ atomId, onSaved }: AtomEditorProps) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Editor */}
-      <div className="flex-1 overflow-hidden">
-        <CodeMirror
-          value={content}
-          onChange={setContent}
-          theme={oneDark}
-          extensions={[markdown()]}
-          className="h-full"
-          basicSetup={{
-            lineNumbers: false,
-            foldGutter: false,
-          }}
-        />
+      {/* Split pane: Editor on left, Preview on right */}
+      <div className="flex-1 flex overflow-hidden gap-px bg-[var(--color-border)]">
+        {/* Left: CodeMirror editor - full height */}
+        <div className="w-1/2 overflow-hidden">
+          <CodeMirror
+            value={content}
+            onChange={setContent}
+            theme={oneDark}
+            extensions={[markdown()]}
+            className="h-full"
+            basicSetup={{
+              lineNumbers: false,
+              foldGutter: false,
+            }}
+          />
+        </div>
+
+        {/* Right: Live preview (rendered markdown) - full height */}
+        <div className="w-1/2 overflow-y-auto bg-[var(--color-bg-panel)] px-6 py-4">
+          <article className="prose prose-invert prose-sm max-w-none prose-headings:text-[var(--color-text-primary)] prose-p:text-[var(--color-text-primary)] prose-a:text-[var(--color-text-primary)] prose-a:underline prose-a:decoration-[var(--color-border-hover)] hover:prose-a:decoration-current prose-strong:text-[var(--color-text-primary)] prose-code:text-[var(--color-accent-light)] prose-code:bg-[var(--color-bg-card)] prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-[var(--color-bg-card)] prose-pre:border prose-pre:border-[var(--color-border)] prose-blockquote:border-l-[var(--color-accent)] prose-blockquote:text-[var(--color-text-secondary)] prose-li:text-[var(--color-text-primary)] prose-hr:border-[var(--color-border)]">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                img: MarkdownImage,
+              }}
+            >
+              {content}
+            </ReactMarkdown>
+          </article>
+        </div>
       </div>
 
       {/* Bottom bar: tags left, source URL right */}
