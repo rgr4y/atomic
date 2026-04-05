@@ -22,11 +22,19 @@ export function truncateContent(content: string, maxLength: number = 150): strin
 
 
 export function isValidUrl(url: string): boolean {
+  if (!url.trim()) return false;
   try {
+    // Try parsing as-is first
     new URL(url);
     return true;
   } catch {
-    return false;
+    // If that fails, try adding https:// prefix
+    try {
+      new URL(`https://${url}`);
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 

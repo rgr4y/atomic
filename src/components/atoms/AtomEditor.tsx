@@ -173,6 +173,7 @@ export function AtomEditor({ atomId, onSaved }: AtomEditorProps) {
   const [existingAtom, setExistingAtom] = useState<AtomWithTags | null>(null);
   const [isLoadingAtom, setIsLoadingAtom] = useState(false);
   const [editorReady, setEditorReady] = useState(false);
+  const [isEditingUrl, setIsEditingUrl] = useState(false);
 
   const isEditing = atomId !== null;
 
@@ -301,12 +302,31 @@ export function AtomEditor({ atomId, onSaved }: AtomEditorProps) {
             onTagsChange={setSelectedTags}
           />
         </div>
-        <input
-          value={sourceUrl}
-          onChange={(e) => setSourceUrl(e.target.value)}
-          placeholder="Source URL"
-          className="shrink-0 w-[220px] px-3 py-1.5 text-sm text-right rounded-lg bg-white/8 backdrop-blur-sm border border-white/10 text-[var(--color-text-secondary)] placeholder:text-[var(--color-text-tertiary)] focus:outline-none focus:text-[var(--color-text-primary)] focus:border-white/20 focus:bg-white/12 transition-all duration-200"
-        />
+        {/* Source URL: glass input when empty, clickable link when filled */}
+        {sourceUrl && !isEditingUrl ? (
+          <button
+            onDoubleClick={() => setIsEditingUrl(true)}
+            onClick={(e) => {
+              e.preventDefault();
+              if (sourceUrl && isValidUrl(sourceUrl)) {
+                window.open(sourceUrl, '_blank');
+              }
+            }}
+            title="Click to open, double-click to edit"
+            className="shrink-0 max-w-[220px] px-3 py-1.5 text-sm text-right text-[var(--color-accent)] hover:text-[var(--color-accent-light)] underline cursor-pointer transition-colors truncate"
+          >
+            {sourceUrl}
+          </button>
+        ) : (
+          <input
+            autoFocus={isEditingUrl}
+            value={sourceUrl}
+            onChange={(e) => setSourceUrl(e.target.value)}
+            onBlur={() => setIsEditingUrl(false)}
+            placeholder="Source URL"
+            className="shrink-0 w-[220px] px-3 py-1.5 text-sm text-right rounded-lg bg-white/8 backdrop-blur-sm border border-white/10 text-[var(--color-text-secondary)] placeholder:text-[var(--color-text-tertiary)] focus:outline-none focus:text-[var(--color-text-primary)] focus:border-white/20 focus:bg-white/12 transition-all duration-200"
+          />
+        )}
       </div>
     </div>
   );
