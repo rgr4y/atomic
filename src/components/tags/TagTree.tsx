@@ -301,7 +301,8 @@ export function TagTree() {
         )}
       </div>
 
-      {/* New Tag button */}
+      {/* New Tag button - TODO: TEMPORARILY DISABLED */}
+      {/*
       <div className="p-3 border-t border-[var(--color-border)] shrink-0">
         <Button
           variant="ghost"
@@ -315,6 +316,7 @@ export function TagTree() {
           New Tag
         </Button>
       </div>
+      */}
 
       {/* Context Menu */}
       <ContextMenu

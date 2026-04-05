@@ -1,48 +1,181 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { getTransport } from '../../lib/transport';
-import CodeMirror from '@uiw/react-codemirror';
-import { markdown } from '@codemirror/lang-markdown';
-import { oneDark } from '@codemirror/theme-one-dark';
-import { EditorView } from '@codemirror/view';
-import { Button } from '../ui/Button';
-import { Input } from '../ui/Input';
-import { TagSelector } from '../tags/TagSelector';
+import { Editor, rootCtx, defaultValueCtx } from '@milkdown/kit/core';
+import { commonmark } from '@milkdown/kit/preset/commonmark';
+import { gfm } from '@milkdown/kit/preset/gfm';
+import { listener, listenerCtx } from '@milkdown/kit/plugin/listener';
+import { nord } from '@milkdown/theme-nord';
+import '@milkdown/theme-nord/style.css';
+import { Milkdown, MilkdownProvider, useEditor } from '@milkdown/react';
+import { TagChip } from '../tags/TagChip';
 import { useAtomsStore, AtomWithTags, Tag } from '../../stores/atoms';
-import { useTagsStore } from '../../stores/tags';
-import { useSettingsStore } from '../../stores/settings';
+import { useTagsStore, TagWithCount } from '../../stores/tags';
 import { isValidUrl } from '../../lib/markdown';
-import { useTheme } from '../../hooks/useTheme';
 
 interface AtomEditorProps {
   atomId: string | null; // null for new atom
-  onClose: () => void;
+  onClose?: () => void;
   onSaved?: (atom: AtomWithTags) => void;
 }
 
-export function AtomEditor({ atomId, onClose, onSaved }: AtomEditorProps) {
+interface MilkdownEditorInnerProps {
+  initialContent: string;
+  onChange: (markdown: string) => void;
+}
+
+function MilkdownEditorInner({ initialContent, onChange }: MilkdownEditorInnerProps) {
+  useEditor((root) =>
+    Editor.make()
+      .config((ctx) => {
+        ctx.set(rootCtx, root);
+        ctx.set(defaultValueCtx, initialContent);
+        ctx.get(listenerCtx).markdownUpdated((_ctx, markdown, prevMarkdown) => {
+          if (markdown !== prevMarkdown) {
+            onChange(markdown);
+          }
+        });
+      })
+      .config(nord)
+      .use(commonmark)
+      .use(gfm)
+      .use(listener),
+    [initialContent]
+  );
+
+  return <Milkdown />;
+}
+
+// Inline tag input — just the text input with dropdown, chips rendered by parent
+function InlineTagInput({ selectedTags, onTagsChange }: { selectedTags: Tag[]; onTagsChange: (tags: Tag[]) => void }) {
+  const tags = useTagsStore(s => s.tags);
+  const createTag = useTagsStore(s => s.createTag);
+  const [inputValue, setInputValue] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const flattenTags = (tags: TagWithCount[]): Tag[] => {
+    return tags.reduce<Tag[]>((acc, tag) => {
+      acc.push({ id: tag.id, name: tag.name, parent_id: tag.parent_id, created_at: tag.created_at });
+      if (tag.children) acc.push(...flattenTags(tag.children));
+      return acc;
+    }, []);
+  };
+
+  const allTags = useMemo(() => flattenTags(tags), [tags]);
+  const selectedTagIds = new Set(selectedTags.map(t => t.id));
+
+  const filtered = useMemo(() => {
+    if (!inputValue.trim()) return [];
+    const q = inputValue.toLowerCase();
+    return allTags
+      .filter(t => !selectedTagIds.has(t.id) && t.name.toLowerCase().includes(q))
+      .slice(0, 8);
+  }, [allTags, inputValue, selectedTagIds]);
+
+  const exactMatch = allTags.some(t => t.name.toLowerCase() === inputValue.trim().toLowerCase());
+
+  const addTag = (tag: Tag) => {
+    onTagsChange([...selectedTags, tag]);
+    setInputValue('');
+    setShowDropdown(false);
+  };
+
+  const commitInput = async () => {
+    const val = inputValue.trim();
+    if (!val || isCreating) return;
+
+    const existing = allTags.find(t => t.name.toLowerCase() === val.toLowerCase() && !selectedTagIds.has(t.id));
+    if (existing) {
+      addTag(existing);
+      return;
+    }
+
+    if (!exactMatch) {
+      setIsCreating(true);
+      try {
+        const newTag = await createTag(val);
+        onTagsChange([...selectedTags, newTag]);
+        setInputValue('');
+        setShowDropdown(false);
+      } catch (e) {
+        console.error('Failed to create tag:', e);
+      } finally {
+        setIsCreating(false);
+      }
+    }
+  };
+
+  return (
+    <div className="relative">
+      <input
+        ref={inputRef}
+        value={inputValue}
+        onChange={e => { setInputValue(e.target.value); setShowDropdown(true); }}
+        onKeyDown={e => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            if (filtered.length > 0) {
+              addTag(filtered[0]);
+            } else {
+              commitInput();
+            }
+          }
+          if (e.key === 'Backspace' && !inputValue && selectedTags.length > 0) {
+            onTagsChange(selectedTags.slice(0, -1));
+          }
+        }}
+        onFocus={() => setShowDropdown(true)}
+        onBlur={() => {
+          setTimeout(() => {
+            setShowDropdown(false);
+            if (inputValue.trim()) commitInput();
+          }, 150);
+        }}
+        placeholder={selectedTags.length === 0 ? 'Add tags...' : ''}
+        className="bg-transparent border-none outline-none text-sm text-[var(--color-text-primary)] placeholder:text-[var(--color-text-tertiary)] min-w-[60px] w-auto"
+        style={{ width: Math.max(60, inputValue.length * 8 + 20) }}
+      />
+      {showDropdown && inputValue && (filtered.length > 0 || (!exactMatch && inputValue.trim())) && (
+        <div className="absolute bottom-full left-0 mb-1 w-56 bg-[var(--color-bg-panel)] border border-[var(--color-border)] rounded-md shadow-lg max-h-48 overflow-y-auto z-50">
+          {filtered.map(tag => (
+            <button
+              key={tag.id}
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => addTag(tag)}
+              className="w-full px-3 py-1.5 text-left text-sm text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] transition-colors"
+            >
+              {tag.name}
+            </button>
+          ))}
+          {!exactMatch && inputValue.trim() && (
+            <button
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => commitInput()}
+              className="w-full px-3 py-1.5 text-left text-sm text-[var(--color-accent)] hover:bg-[var(--color-bg-hover)] transition-colors"
+            >
+              Create "{inputValue.trim()}"
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function AtomEditor({ atomId, onSaved }: AtomEditorProps) {
   const createAtom = useAtomsStore(s => s.createAtom);
   const updateAtom = useAtomsStore(s => s.updateAtom);
   const fetchTags = useTagsStore(s => s.fetchTags);
-  const settings = useSettingsStore(s => s.settings);
-  const fetchSettings = useSettingsStore(s => s.fetchSettings);
-  const theme = useTheme();
-
   const [content, setContent] = useState('');
   const [sourceUrl, setSourceUrl] = useState('');
   const [selectedTags, setSelectedTags] = useState<Tag[]>([]);
-  const [isSaving, setIsSaving] = useState(false);
-  const [urlError, setUrlError] = useState<string | null>(null);
   const [existingAtom, setExistingAtom] = useState<AtomWithTags | null>(null);
   const [isLoadingAtom, setIsLoadingAtom] = useState(false);
+  const [editorReady, setEditorReady] = useState(false);
 
   const isEditing = atomId !== null;
-  const autoTaggingEnabled = settings.auto_tagging_enabled !== 'false' && !!settings.openrouter_api_key;
 
-  useEffect(() => {
-    fetchSettings();
-  }, [fetchSettings]);
-
-  // Fetch existing atom from database when editing
   useEffect(() => {
     if (isEditing && atomId) {
       setIsLoadingAtom(true);
@@ -58,6 +191,7 @@ export function AtomEditor({ atomId, onClose, onSaved }: AtomEditorProps) {
         });
     } else {
       setExistingAtom(null);
+      setEditorReady(true);
     }
   }, [isEditing, atomId]);
 
@@ -66,42 +200,41 @@ export function AtomEditor({ atomId, onClose, onSaved }: AtomEditorProps) {
       setContent(existingAtom.content);
       setSourceUrl(existingAtom.source_url || '');
       setSelectedTags(existingAtom.tags);
+      setEditorReady(true);
     }
   }, [existingAtom]);
 
-  const handleSourceUrlChange = (value: string) => {
-    setSourceUrl(value);
-    if (value && !isValidUrl(value)) {
-      setUrlError('Please enter a valid URL');
-    } else {
-      setUrlError(null);
-    }
-  };
+  const handleContentChange = useCallback((markdown: string) => {
+    setContent(markdown);
+  }, []);
 
-  const handleSave = async () => {
-    if (!content.trim() || isSaving) return;
-    if (sourceUrl && !isValidUrl(sourceUrl)) return;
+  // Auto-save on unmount (when drawer closes, click outside, ESC, etc.)
+  const contentRef = useRef(content);
+  const sourceUrlRef = useRef(sourceUrl);
+  const selectedTagsRef = useRef(selectedTags);
+  const onSavedRef = useRef(onSaved);
+  contentRef.current = content;
+  sourceUrlRef.current = sourceUrl;
+  selectedTagsRef.current = selectedTags;
+  onSavedRef.current = onSaved;
 
-    setIsSaving(true);
-    try {
-      const tagIds = selectedTags.map((t) => t.id);
-      const savedAtom = isEditing
-        ? await updateAtom(atomId!, content, sourceUrl || undefined, tagIds)
-        : await createAtom(content, sourceUrl || undefined, tagIds);
-      
-      // Refresh tags to update counts
-      await fetchTags();
-      
-      onSaved?.(savedAtom);
-      onClose();
-    } catch (error) {
-      console.error('Failed to save atom:', error);
-    } finally {
-      setIsSaving(false);
-    }
-  };
+  useEffect(() => {
+    return () => {
+      const c = contentRef.current;
+      const url = sourceUrlRef.current;
+      const tags = selectedTagsRef.current;
+      if (!c.trim()) return;
+      const tagIds = tags.map((t) => t.id);
+      const validUrl = url && isValidUrl(url) ? url : undefined;
+      const save = isEditing
+        ? updateAtom(atomId!, c, validUrl, tagIds)
+        : createAtom(c, validUrl, tagIds);
+      save
+        .then((savedAtom) => { onSavedRef.current?.(savedAtom); return fetchTags(); })
+        .catch((e) => console.error('Auto-save failed:', e));
+    };
+  }, []);
 
-  // Show loading state when fetching atom for editing
   if (isEditing && isLoadingAtom) {
     return (
       <div className="flex items-center justify-center h-full p-4 text-[var(--color-text-secondary)]">
@@ -110,96 +243,43 @@ export function AtomEditor({ atomId, onClose, onSaved }: AtomEditorProps) {
     );
   }
 
-  const canSave = content.trim().length > 0 && !urlError;
-
-  // Custom theme extension for CodeMirror
-  const customTheme = EditorView.theme({
-    '&': {
-      backgroundColor: 'var(--color-bg-card)',
-      height: '100%',
-    },
-    '.cm-gutters': {
-      backgroundColor: 'var(--color-bg-card)',
-      borderRight: '1px solid var(--color-border)',
-    },
-    '.cm-activeLineGutter': {
-      backgroundColor: 'var(--color-bg-hover)',
-    },
-    '.cm-activeLine': {
-      backgroundColor: 'var(--color-bg-hover)',
-    },
-    '.cm-scroller': {
-      fontFamily: 'var(--font-mono)',
-    },
-  });
-
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--color-border)]">
-        <h2 className="text-lg font-semibold text-[var(--color-text-primary)]">
-          {isEditing ? 'Edit Atom' : 'New Atom'}
-        </h2>
-        <button
-          onClick={onClose}
-          className="text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
-        >
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
-
       {/* Editor */}
-      <div className="flex-1 overflow-hidden">
-        <CodeMirror
-          value={content}
-          onChange={setContent}
-          extensions={[markdown(), customTheme, EditorView.lineWrapping]}
-          theme={theme === 'obsidian' ? oneDark : undefined}
-          placeholder="Write your note in Markdown..."
-          className="h-full"
-          basicSetup={{
-            lineNumbers: true,
-            highlightActiveLineGutter: true,
-            highlightActiveLine: true,
-            foldGutter: true,
-          }}
-        />
-      </div>
-
-      {/* Form fields */}
-      <div className="px-6 py-4 space-y-4 border-t border-[var(--color-border)]">
-        <Input
-          label="Source URL (optional)"
-          value={sourceUrl}
-          onChange={(e) => handleSourceUrlChange(e.target.value)}
-          placeholder="https://example.com/article"
-          error={urlError || undefined}
-        />
-        <TagSelector selectedTags={selectedTags} onTagsChange={setSelectedTags} />
-        {autoTaggingEnabled && (
-          <p className="text-xs text-[var(--color-text-secondary)] mt-1">
-            <span className="inline-flex items-center gap-1">
-              <svg className="w-3 h-3 text-[var(--color-accent)]" fill="currentColor" viewBox="0 0 20 20">
-                <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
-              </svg>
-              Tags will be extracted automatically
-            </span>
-          </p>
+      <div className="flex-1 overflow-auto milkdown-editor-wrapper">
+        {editorReady && (
+          <MilkdownProvider>
+            <MilkdownEditorInner
+              initialContent={content}
+              onChange={handleContentChange}
+            />
+          </MilkdownProvider>
         )}
       </div>
 
-      {/* Footer */}
-      <div className="flex justify-end gap-3 px-6 py-4 border-t border-[var(--color-border)]">
-        <Button variant="secondary" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button onClick={handleSave} disabled={!canSave || isSaving}>
-          {isSaving ? 'Saving...' : 'Save'}
-        </Button>
+      {/* Bottom bar: tags left, source URL right */}
+      <div className="flex items-center gap-3 px-6 py-3 border-t border-[var(--color-border)] bg-[var(--color-bg-card)]">
+        <div className="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
+          {selectedTags.map(tag => (
+            <TagChip
+              key={tag.id}
+              name={tag.name}
+              size="sm"
+              onRemove={() => setSelectedTags(selectedTags.filter(t => t.id !== tag.id))}
+            />
+          ))}
+          <InlineTagInput
+            selectedTags={selectedTags}
+            onTagsChange={setSelectedTags}
+          />
+        </div>
+        <input
+          value={sourceUrl}
+          onChange={(e) => setSourceUrl(e.target.value)}
+          placeholder="Source URL"
+          className="bg-transparent border-none outline-none text-sm text-[var(--color-text-secondary)] placeholder:text-[var(--color-text-tertiary)] text-right shrink-0 w-[200px] focus:text-[var(--color-text-primary)]"
+        />
       </div>
     </div>
   );
 }
-

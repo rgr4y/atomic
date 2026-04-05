@@ -11,6 +11,9 @@ export class HttpTransport implements Transport {
   private shouldReconnect = false;
   private reconnectDelay = 1000;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private pingInterval: ReturnType<typeof setInterval> | null = null;
+  private pingTimeout: ReturnType<typeof setTimeout> | null = null;
+  private visibilityHandler: (() => void) | null = null;
   private wsUrl: string | null = null;
   private authExpired = false;
   onConnectionChange?: (connected: boolean) => void;
@@ -30,12 +33,33 @@ export class HttpTransport implements Transport {
       .replace(/^http/, 'ws')
       .replace(/\/$/, '')
       + `/ws?token=${encodeURIComponent(this.config.authToken)}`;
+    this.setupVisibilityHandler();
     try {
       await this.connectWs();
     } catch {
       // WebSocket failed (stale token, server down, etc.) — don't block app startup.
       // HTTP calls will detect auth issues; reconnect will retry in background.
       this.scheduleReconnect();
+    }
+  }
+
+  private setupVisibilityHandler(): void {
+    this.teardownVisibilityHandler();
+    this.visibilityHandler = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (!this.shouldReconnect) return;
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+        this.reconnectDelay = 1000; // reset backoff for visibility-triggered reconnect
+        this.forceReconnect();
+      }
+    };
+    document.addEventListener('visibilitychange', this.visibilityHandler);
+  }
+
+  private teardownVisibilityHandler(): void {
+    if (this.visibilityHandler) {
+      document.removeEventListener('visibilitychange', this.visibilityHandler);
+      this.visibilityHandler = null;
     }
   }
 
@@ -46,22 +70,26 @@ export class HttpTransport implements Transport {
       this.ws.onmessage = (msg) => {
         try {
           const data = JSON.parse(msg.data);
+          // Any message from the server counts as proof of liveness
+          this.clearPingTimeout();
           const normalized = normalizeServerEvent(data);
           if (normalized) {
             const subs = this.listeners.get(normalized.event);
             if (subs) subs.forEach((cb) => cb(normalized.payload));
           }
-        } catch {
-          // ignore malformed messages
+        } catch (e) {
+          console.warn('[WS] Failed to parse message:', e, msg.data);
         }
       };
       this.ws.onopen = () => {
         this.connected = true;
         this.reconnectDelay = 1000; // reset backoff
+        this.startPingInterval();
         this.onConnectionChange?.(true);
         resolve();
       };
       this.ws.onclose = () => {
+        this.stopPingInterval();
         const wasConnected = this.connected;
         this.connected = false;
         if (wasConnected) {
@@ -75,8 +103,67 @@ export class HttpTransport implements Transport {
     });
   }
 
+  private startPingInterval(): void {
+    this.stopPingInterval();
+    this.pingInterval = setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        try {
+          this.ws.send(JSON.stringify({ type: 'ping' }));
+        } catch {
+          // send failed — connection is dead
+          this.forceReconnect();
+          return;
+        }
+        this.pingTimeout = setTimeout(() => {
+          // No message received within 5s of ping — assume stale
+          console.warn('[WS] Ping timeout, forcing reconnect');
+          this.forceReconnect();
+        }, 5000);
+      }
+    }, 30000);
+  }
+
+  private stopPingInterval(): void {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
+    this.clearPingTimeout();
+  }
+
+  private clearPingTimeout(): void {
+    if (this.pingTimeout) {
+      clearTimeout(this.pingTimeout);
+      this.pingTimeout = null;
+    }
+  }
+
+  private forceReconnect(): void {
+    this.stopPingInterval();
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.ws) {
+      // Detach handlers so the closing WS doesn't trigger scheduleReconnect
+      this.ws.onclose = null;
+      this.ws.onerror = null;
+      this.ws.onmessage = null;
+      this.ws.close();
+      this.ws = null;
+    }
+    const wasConnected = this.connected;
+    this.connected = false;
+    if (wasConnected) {
+      this.onConnectionChange?.(false);
+    }
+    this.scheduleReconnect();
+  }
+
   private scheduleReconnect(): void {
     if (!this.shouldReconnect) return;
+    // Add ±20% jitter to prevent thundering herd
+    const jitter = this.reconnectDelay * (0.8 + Math.random() * 0.4);
     this.reconnectTimer = setTimeout(async () => {
       try {
         await this.connectWs();
@@ -84,11 +171,13 @@ export class HttpTransport implements Transport {
         this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000);
         this.scheduleReconnect();
       }
-    }, this.reconnectDelay);
+    }, jitter);
   }
 
   disconnect(): void {
     this.shouldReconnect = false;
+    this.stopPingInterval();
+    this.teardownVisibilityHandler();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;

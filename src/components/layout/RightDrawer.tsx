@@ -219,7 +219,7 @@ export function RightDrawer() {
       {/* Drawer */}
       <div
         ref={drawerRef}
-        className={`fixed top-0 right-0 h-full w-full md:w-[75vw] md:min-w-[600px] md:max-w-[1200px] bg-[var(--color-bg-panel)] border-l border-[var(--color-border)] shadow-2xl z-50 transition-transform duration-200 ease-out ${isTauri() ? 'pt-[28px]' : ''} ${
+        className={`fixed top-0 right-0 h-full w-full md:w-[85vw] md:min-w-[600px] md:max-w-[1400px] bg-[var(--color-bg-panel)] border-l border-[var(--color-border)] shadow-2xl z-50 transition-transform duration-200 ease-out ${isTauri() ? 'pt-[28px]' : ''} ${
           isOpen ? 'translate-x-0' : 'translate-x-full'
         }`}
         style={{ backdropFilter: 'blur(var(--backdrop-blur))' }}

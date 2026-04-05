@@ -978,6 +978,28 @@ export function SettingsPage() {
                     />
                   </div>
 
+                  {/* Font Size Selector */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-[var(--color-text-primary)]">
+                      Font Size
+                    </label>
+                    <div className="flex gap-2">
+                      {(['small', 'regular', 'large'] as const).map((size) => (
+                        <button
+                          key={size}
+                          onClick={() => autoSave('font_size', size)}
+                          className={`flex-1 px-3 py-2 rounded text-sm font-medium transition-colors ${
+                            settings.font_size === size || (!settings.font_size && size === 'regular')
+                              ? 'bg-[var(--color-accent)] text-white'
+                              : 'bg-[var(--color-bg-hover)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]/80'
+                          }`}
+                        >
+                          {size === 'small' ? 'A' : size === 'regular' ? 'A+' : 'A++'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   {/* Auto-tagging Toggle Section */}
                   <div className="flex items-center justify-between">
                     <div className="space-y-1">

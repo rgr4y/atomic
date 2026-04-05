@@ -46,6 +46,9 @@
 
 /* Theme Definitions */
 :root {
+  /* Editor font size — adjust based on font_size setting */
+  --editor-font-size: 1.0625rem; /* default (regular) */
+
   /* Obsidian Theme (Default) */
   --color-bg-main: #1e1e1e;
   --color-bg-panel: #252525;
@@ -232,6 +235,218 @@ label, th, summary, .select-none {
 input, textarea, [contenteditable], pre, code,
 article, .prose, .select-text {
   user-select: text;
+}
+
+/* Milkdown WYSIWYG editor — dark theme overrides on top of nord */
+
+/* Kill nord's color scheme at the root */
+.milkdown-editor-wrapper .milkdown-theme-nord {
+  --color-gray-900: #e0e0e0;
+  --color-gray-800: #ccc;
+  --color-gray-700: #aaa;
+  --color-gray-600: #999;
+  --color-gray-200: #444;
+  --color-gray-100: #333;
+  --color-gray-50: #2d2d2d;
+  --tw-prose-body: #e0e0e0;
+  --tw-prose-bold: #f0f0f0;
+  --tw-prose-headings: #f0f0f0;
+  --tw-prose-links: var(--color-accent-light, #a78bfa);
+  --tw-prose-counters: #888;
+  --tw-prose-bullets: #888;
+  --tw-prose-quotes: #bbb;
+  --tw-prose-code: #ddd;
+  color: #e0e0e0;
+}
+
+.milkdown-editor-wrapper {
+  display: flex;
+  flex-direction: column;
+}
+
+.milkdown-editor-wrapper .milkdown {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--color-bg-card);
+}
+
+.milkdown-editor-wrapper .milkdown > .editor {
+  flex: 1;
+  background-color: var(--color-bg-card);
+}
+
+.milkdown-editor-wrapper .ProseMirror {
+  min-height: 100%;
+  padding: 1.5rem;
+  outline: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-size: 1.0625rem;
+  line-height: 1.75;
+  color: #e0e0e0;
+  background-color: var(--color-bg-card);
+}
+
+/* Headings */
+.milkdown-editor-wrapper .ProseMirror h1 {
+  color: #f0f0f0;
+  font-weight: 700;
+  font-size: 1.75rem;
+  line-height: 1.3;
+  margin: 0.75em 0 0.25em;
+}
+
+.milkdown-editor-wrapper .ProseMirror h2 {
+  color: #f0f0f0;
+  font-weight: 700;
+  font-size: 1.375rem;
+  line-height: 1.35;
+  margin: 0.625em 0 0.25em;
+}
+
+.milkdown-editor-wrapper .ProseMirror h3,
+.milkdown-editor-wrapper .ProseMirror h4,
+.milkdown-editor-wrapper .ProseMirror h5,
+.milkdown-editor-wrapper .ProseMirror h6 {
+  color: #ebebeb;
+  font-weight: 600;
+  font-size: 1.1875rem;
+  margin: 0.5em 0 0.25em;
+}
+
+/* Bold text — bright white */
+.milkdown-editor-wrapper .ProseMirror strong,
+.milkdown-editor-wrapper .ProseMirror b {
+  color: #f0f0f0;
+  font-weight: 700;
+}
+
+.milkdown-editor-wrapper .ProseMirror p {
+  margin-bottom: 0.5em;
+}
+
+.milkdown-editor-wrapper .ProseMirror a {
+  color: var(--color-accent-light);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Blockquotes */
+.milkdown-editor-wrapper .ProseMirror blockquote {
+  border-left: 3px solid var(--color-accent);
+  padding-left: 1rem;
+  color: #aaa;
+  margin: 1em 0;
+}
+
+/* Inline code */
+.milkdown-editor-wrapper .ProseMirror code {
+  font-family: var(--font-mono);
+  background-color: rgba(255, 255, 255, 0.08);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  font-size: 0.9em;
+  color: #ddd;
+}
+
+/* Code blocks */
+.milkdown-editor-wrapper .ProseMirror pre {
+  background-color: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 1rem;
+  overflow-x: auto;
+  margin: 1em 0;
+}
+
+.milkdown-editor-wrapper .ProseMirror pre code {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+  font-size: 0.875rem;
+  color: #d4d4d4;
+}
+
+/* Lists */
+.milkdown-editor-wrapper .ProseMirror ul,
+.milkdown-editor-wrapper .ProseMirror ol {
+  padding-left: 1.5em;
+  margin: 0.75em 0;
+}
+
+.milkdown-editor-wrapper .ProseMirror li {
+  margin-bottom: 0.25em;
+}
+
+.milkdown-editor-wrapper .ProseMirror li::marker {
+  color: #888;
+}
+
+/* Horizontal rules */
+.milkdown-editor-wrapper .ProseMirror hr {
+  border: none;
+  border-top: 1px solid var(--color-border);
+  margin: 1.5em 0;
+}
+
+/* Images */
+.milkdown-editor-wrapper .ProseMirror img {
+  max-width: 100%;
+  border-radius: 6px;
+}
+
+/* Tables (GFM) */
+.milkdown-editor-wrapper .ProseMirror table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+}
+
+.milkdown-editor-wrapper .ProseMirror th,
+.milkdown-editor-wrapper .ProseMirror td {
+  border: 1px solid var(--color-border);
+  padding: 0.5em 0.75em;
+  text-align: left;
+}
+
+.milkdown-editor-wrapper .ProseMirror th {
+  background-color: rgba(255, 255, 255, 0.05);
+  color: #f0f0f0;
+  font-weight: 600;
+}
+
+/* Strikethrough (GFM) */
+.milkdown-editor-wrapper .ProseMirror del {
+  color: #888;
+}
+
+/* Task lists (GFM) */
+.milkdown-editor-wrapper .ProseMirror li[data-checked] {
+  list-style: none;
+  position: relative;
+  padding-left: 0.5em;
+}
+
+/* Placeholder text */
+.milkdown-editor-wrapper .ProseMirror p.is-editor-empty:first-child::before {
+  content: 'Write your note in Markdown...';
+  color: var(--color-text-tertiary);
+  pointer-events: none;
+  float: left;
+  height: 0;
+}
+
+/* Font size control classes */
+body.font-size-small .milkdown-editor-wrapper .ProseMirror {
+  font-size: 0.9375rem;
+}
+
+body.font-size-regular .milkdown-editor-wrapper .ProseMirror {
+  font-size: 1.0625rem;
+}
+
+body.font-size-large .milkdown-editor-wrapper .ProseMirror {
+  font-size: 1.1875rem;
 }
 
 /* Line clamp utilities for command palette */

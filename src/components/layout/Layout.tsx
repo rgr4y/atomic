@@ -11,7 +11,7 @@ import { PipelineStatus } from '../pipeline';
 import { useAtomsStore } from '../../stores/atoms';
 import { useTagsStore } from '../../stores/tags';
 import { useUIStore } from '../../stores/ui';
-import { useTheme, useFont } from '../../hooks';
+import { useTheme, useFont, useFontSize } from '../../hooks';
 import { verifyProviderConfigured } from '../../lib/api';
 import { isTauri } from '../../lib/platform';
 
@@ -19,6 +19,7 @@ import { isTauri } from '../../lib/platform';
 export function Layout() {
   useTheme(); // Initialize theme
   useFont(); // Initialize font
+  useFontSize(); // Initialize font size
   const fetchAtoms = useAtomsStore(s => s.fetchAtoms);
   const fetchTags = useTagsStore(s => s.fetchTags);
   const [isSetupRequired, setIsSetupRequired] = useState<boolean | null>(null); // null = checking
@@ -36,11 +37,13 @@ export function Layout() {
   // Global keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger shortcuts when typing in input fields (except for command palette toggle)
+      // Don't trigger shortcuts when typing in input fields or editors
+      const el = document.activeElement as HTMLElement | null;
       const isInputActive =
-        document.activeElement?.tagName === 'INPUT' ||
-        document.activeElement?.tagName === 'TEXTAREA' ||
-        (document.activeElement as HTMLElement)?.isContentEditable;
+        el?.tagName === 'INPUT' ||
+        el?.tagName === 'TEXTAREA' ||
+        el?.isContentEditable ||
+        !!el?.closest('.ProseMirror, [contenteditable="true"]');
 
       // Cmd+P or Ctrl+P to toggle command palette (works even in inputs)
       if ((e.metaKey || e.ctrlKey) && e.key === 'p') {
