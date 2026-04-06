@@ -17,15 +17,8 @@ export function formatRelativeDate(dateString: string): string {
     return 'Yesterday';
   } else if (diffDays < 7) {
     return `${diffDays} days ago`;
-  } else if (diffDays < 30) {
-    const weeks = Math.floor(diffDays / 7);
-    return `${weeks} week${weeks === 1 ? '' : 's'} ago`;
-  } else if (diffDays < 365) {
-    const months = Math.floor(diffDays / 30);
-    return `${months} month${months === 1 ? '' : 's'} ago`;
   } else {
-    const years = Math.floor(diffDays / 365);
-    return `${years} year${years === 1 ? '' : 's'} ago`;
+    return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
   }
 }
 
@@ -46,18 +39,14 @@ export function formatShortRelativeDate(dateString: string): string {
     return `${diffHours}h`;
   } else if (diffDays < 7) {
     return `${diffDays}d`;
-  } else if (diffDays < 30) {
-    return `${Math.floor(diffDays / 7)}w`;
-  } else if (diffDays < 365) {
-    return `${Math.floor(diffDays / 30)}mo`;
   } else {
-    return `${Math.floor(diffDays / 365)}y`;
+    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   }
 }
 
 export function formatDate(dateString: string): string {
   const date = new Date(dateString);
-  return date.toLocaleDateString('en-US', {
+  return date.toLocaleDateString(undefined, {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
