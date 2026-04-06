@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { DisplayAtom } from '../../stores/atoms';
+import { DisplayAtom, useAtomsStore } from '../../stores/atoms';
 import { TagChip } from '../tags/TagChip';
 import { formatRelativeDate, formatShortRelativeDate } from '../../lib/date';
 
@@ -17,9 +17,14 @@ function getDisplaySource(atom: DisplayAtom): string | null {
   return null;
 }
 
-/** Display date matches the default sort order (updated_at desc) */
+/** Display date matches the current sort field */
 function getDisplayDate(atom: DisplayAtom): string {
-  return atom.updated_at;
+  const sortBy = useAtomsStore.getState().sortBy;
+  switch (sortBy) {
+    case 'created': return atom.created_at;
+    case 'published': return atom.published_at || atom.created_at;
+    default: return atom.updated_at;
+  }
 }
 
 interface AtomCardProps {
