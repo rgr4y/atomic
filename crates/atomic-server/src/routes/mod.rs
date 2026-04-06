@@ -126,6 +126,14 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
         "/embeddings/status",
         web::get().to(embedding::get_pipeline_status),
     );
+    cfg.route(
+        "/embeddings/items",
+        web::get().to(embedding::get_pipeline_items),
+    );
+    cfg.route(
+        "/embeddings/cancel/{atom_id}",
+        web::post().to(embedding::cancel_pipeline_item),
+    );
 
     // Canvas
     cfg.route("/canvas/positions", web::get().to(canvas::get_positions));

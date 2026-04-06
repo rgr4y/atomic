@@ -152,8 +152,9 @@ export function PipelineStatus({ isOpen, onClose }: PipelineStatusProps) {
         {/* Summary stats */}
         {status ? (
           <>
-            <div className="grid grid-cols-4 gap-3 px-5 py-4 border-b border-[var(--color-border)]">
+            <div className="grid grid-cols-5 gap-3 px-5 py-4 border-b border-[var(--color-border)]">
               <StatBox label="Pending" value={status.pending} color="amber" />
+              <StatBox label="Queued" value={status.queued} color="sky" />
               <StatBox label="Processing" value={status.processing} color="blue" pulse={status.processing > 0} />
               <StatBox label="Complete" value={status.complete} color="emerald" />
               <StatBox label="Failed" value={status.failed_count} color="red" />
@@ -227,6 +228,7 @@ export function PipelineStatus({ isOpen, onClose }: PipelineStatusProps) {
 function StatBox({ label, value, color, pulse }: { label: string; value: number; color: string; pulse?: boolean }) {
   const colorMap: Record<string, string> = {
     amber: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+    sky: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
     blue: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
     emerald: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
     red: 'bg-red-500/15 text-red-400 border-red-500/30',

@@ -41,6 +41,14 @@ import {
   type CreateTokenResponse,
   type Feed,
   reembedAllAtoms,
+  getPipelineStatus,
+  getPipelineItems,
+  cancelPipelineItem,
+  retryEmbedding,
+  resetStuckProcessing,
+  processPendingEmbeddings,
+  type PipelineStatus as PipelineStatusData,
+  type PipelineItem,
   exportLogs,
   type IngestionResult,
   type FeedPollResult,
@@ -321,8 +329,7 @@ export function SettingsPage() {
   const [chatModel, setChatModel] = useState('anthropic/claude-sonnet-4.5');
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  // Re-embedding confirmation
-  const [pendingEmbeddingChange, setPendingEmbeddingChange] = useState<{ key: string; value: string; label: string } | null>(null);
+  // (pendingEmbeddingChange dialog removed — dimension change box handles it)
 
   // OpenRouter model loading
   const [availableModels, setAvailableModels] = useState<AvailableModel[]>([]);
@@ -337,7 +344,7 @@ export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
 
   // MCP setup state
-  const [showMcpSetup, setShowMcpSetup] = useState(false);
+  const [showMcpSetup, setShowMcpSetup] = useState(true);
   const [mcpConfig, setMcpConfig] = useState<McpConfig | null>(null);
   const [mcpConfigCopied, setMcpConfigCopied] = useState(false);
 
@@ -377,6 +384,14 @@ export function SettingsPage() {
   const [reembedding, setReembedding] = useState(false);
   const [reembedResult, setReembedResult] = useState<number | null>(null);
   const [reembedError, setReembedError] = useState<string | null>(null);
+
+  // Pipeline status (used in AI tab for re-embed gating, and Connection tab for inline dashboard)
+  const [pipelineStatus, setPipelineStatus] = useState<PipelineStatusData | null>(null);
+  const [pipelineRetrying, setPipelineRetrying] = useState<Set<string>>(new Set());
+  const [pipelineRetryingAll, setPipelineRetryingAll] = useState(false);
+  const [pipelineActionInProgress, setPipelineActionInProgress] = useState<string | null>(null);
+  const [pipelineItems, setPipelineItems] = useState<PipelineItem[]>([]);
+  const [pipelineCancelling, setPipelineCancelling] = useState<Set<string>>(new Set());
 
   // Dimension change confirmation (typed "RE-EMBED" required)
   const [dimensionChangeInfo, setDimensionChangeInfo] = useState<{
@@ -673,6 +688,14 @@ export function SettingsPage() {
     }
   }, [isOpen, fetchSettings, loadApiTokens]);
 
+  // Load MCP config eagerly when integrations tab is active (section expanded by default)
+  useEffect(() => {
+    if (isOpen && activeTab === 'integrations' && !mcpConfig && getTransport().isConnected()) {
+      const transport = getTransport() as import('../../lib/transport/http').HttpTransport;
+      setMcpConfig(getMcpConfig(transport.getConfig().baseUrl));
+    }
+  }, [isOpen, activeTab, mcpConfig]);
+
   // Load feeds when feeds tab is active
   useEffect(() => {
     if (isOpen && activeTab === 'feeds' && getTransport().isConnected()) {
@@ -721,6 +744,26 @@ export function SettingsPage() {
     return () => clearTimeout(timer);
   }, [isOpen, provider, ollamaHost, checkOllamaConnection]);
 
+  // Fetch pipeline status (AI tab: re-embed gating; Connection tab: inline dashboard)
+  useEffect(() => {
+    if (!isOpen || (activeTab !== 'ai' && activeTab !== 'connection')) return;
+    const fetchAll = async () => {
+      getPipelineStatus().then(setPipelineStatus).catch(() => {});
+      if (activeTab === 'connection') {
+        // Fetch individual items for the connection tab dashboard
+        const [pending, queued, processing] = await Promise.all([
+          getPipelineItems('pending').catch(() => []),
+          getPipelineItems('queued').catch(() => []),
+          getPipelineItems('processing').catch(() => []),
+        ]);
+        setPipelineItems([...processing, ...queued, ...pending]);
+      }
+    };
+    fetchAll();
+    const interval = setInterval(fetchAll, 5000);
+    return () => clearInterval(interval);
+  }, [isOpen, activeTab]);
+
   // ESC key to go back
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -762,36 +805,27 @@ export function SettingsPage() {
     }
   }, [setSetting]);
 
-  // Handle changes that trigger re-embedding
+  // Handle changes that trigger re-embedding — apply immediately.
+  // If dimensions change, the server returns dimension_changed and the
+  // red RE-EMBED confirmation box handles the actual re-embed decision.
   const handleEmbeddingModelChange = (value: string) => {
-    setPendingEmbeddingChange({ key: 'embedding_model', value, label: value.split('/').pop() || value });
+    setEmbeddingModel(value);
+    autoSave('embedding_model', value);
   };
 
   const handleOllamaEmbeddingModelChange = (value: string) => {
-    setPendingEmbeddingChange({ key: 'ollama_embedding_model', value, label: value });
+    setOllamaEmbeddingModel(value);
+    autoSave('ollama_embedding_model', value);
   };
 
   const handleOpenaiCompatEmbeddingModelChange = (value: string) => {
-    setPendingEmbeddingChange({ key: 'openai_compat_embedding_model', value, label: value });
+    setOpenaiCompatEmbeddingModel(value);
+    autoSave('openai_compat_embedding_model', value);
   };
 
   const handleOpenaiCompatEmbeddingDimensionChange = (value: string) => {
-    setPendingEmbeddingChange({ key: 'openai_compat_embedding_dimension', value, label: `${value} dimensions` });
-  };
-
-  const confirmEmbeddingChange = async () => {
-    if (!pendingEmbeddingChange) return;
-    const { key, value } = pendingEmbeddingChange;
-    if (key === 'embedding_model') setEmbeddingModel(value);
-    if (key === 'ollama_embedding_model') setOllamaEmbeddingModel(value);
-    if (key === 'openai_compat_embedding_model') setOpenaiCompatEmbeddingModel(value);
-    if (key === 'openai_compat_embedding_dimension') setOpenaiCompatEmbeddingDimension(value);
-    await autoSave(key, value);
-    setPendingEmbeddingChange(null);
-  };
-
-  const cancelEmbeddingChange = () => {
-    setPendingEmbeddingChange(null);
+    setOpenaiCompatEmbeddingDimension(value);
+    autoSave('openai_compat_embedding_dimension', value);
   };
 
   // Test OpenAI Compatible connection
@@ -1667,7 +1701,8 @@ export function SettingsPage() {
                       <Button
                         variant="secondary"
                         onClick={() => { setShowReembedConfirm(true); setReembedResult(null); setReembedError(null); }}
-                        disabled={reembedding}
+                        disabled={reembedding || (pipelineStatus != null && (pipelineStatus.pending + pipelineStatus.queued + pipelineStatus.processing) > 2)}
+                        title={pipelineStatus && (pipelineStatus.pending + pipelineStatus.queued + pipelineStatus.processing) > 2 ? `Pipeline is busy (${pipelineStatus.pending + pipelineStatus.queued + pipelineStatus.processing} items in queue)` : undefined}
                       >
                         Re-embed All Atoms
                       </Button>
@@ -2006,6 +2041,220 @@ export function SettingsPage() {
                     </div>
                   )}
 
+                  {/* Pipeline Status Section */}
+                  <div className="space-y-3 pt-4 border-t border-[var(--color-border)]">
+                    <div className="space-y-1">
+                      <label className="block text-sm font-medium text-[var(--color-text-primary)]">
+                        Pipeline Status
+                      </label>
+                      <p className="text-xs text-[var(--color-text-secondary)]">
+                        Embedding pipeline queue and failed items
+                      </p>
+                    </div>
+
+                    {pipelineStatus ? (
+                      <>
+                        {/* Stats grid */}
+                        <div className="grid grid-cols-5 gap-2">
+                          {([
+                            { label: 'Pending', value: pipelineStatus.pending, color: 'amber' },
+                            { label: 'Queued', value: pipelineStatus.queued, color: 'sky' },
+                            { label: 'Processing', value: pipelineStatus.processing, color: 'blue' },
+                            { label: 'Complete', value: pipelineStatus.complete, color: 'emerald' },
+                            { label: 'Failed', value: pipelineStatus.failed_count, color: 'red' },
+                          ] as const).map(({ label, value, color }) => {
+                            const colorMap: Record<string, string> = {
+                              amber: 'bg-amber-500/15 text-amber-400 border-amber-500/30',
+                              sky: 'bg-sky-500/15 text-sky-400 border-sky-500/30',
+                              blue: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+                              emerald: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+                              red: 'bg-red-500/15 text-red-400 border-red-500/30',
+                            };
+                            return (
+                              <div key={label} className={`rounded-lg border px-3 py-2.5 text-center ${colorMap[color]}`}>
+                                <div className={`text-2xl font-bold tabular-nums ${color === 'blue' && value > 0 ? 'animate-pulse' : ''}`}>
+                                  {value}
+                                </div>
+                                <div className="text-[11px] font-medium uppercase tracking-wider opacity-80 mt-0.5">
+                                  {label}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Pipeline items (pending + processing) */}
+                        {pipelineItems.length > 0 && (
+                          <div className="space-y-2">
+                            <span className="text-sm font-medium text-[var(--color-text-primary)]">
+                              Queue ({pipelineItems.length})
+                            </span>
+                            <div className="space-y-1 max-h-48 overflow-y-auto">
+                              {pipelineItems.map((item) => (
+                                <div key={item.atom_id} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-[var(--color-bg-card)] border border-[var(--color-border)]">
+                                  <span className={`shrink-0 w-1.5 h-1.5 rounded-full ${item.status === 'processing' ? 'bg-blue-400 animate-pulse' : item.status === 'queued' ? 'bg-sky-400' : 'bg-amber-400'}`} />
+                                  <div className="flex-1 min-w-0 text-sm text-[var(--color-text-primary)] truncate">
+                                    {item.title || 'Untitled'}
+                                  </div>
+                                  <span className="shrink-0 text-[11px] text-[var(--color-text-secondary)] uppercase">
+                                    {item.status}
+                                  </span>
+                                  <button
+                                    onClick={async () => {
+                                      setPipelineCancelling(prev => new Set(prev).add(item.atom_id));
+                                      try {
+                                        await cancelPipelineItem(item.atom_id);
+                                        // Refresh items and status
+                                        const [pending, processing, status] = await Promise.all([
+                                          getPipelineItems('pending').catch(() => []),
+                                          getPipelineItems('processing').catch(() => []),
+                                          getPipelineStatus(),
+                                        ]);
+                                        setPipelineItems([...processing, ...pending]);
+                                        setPipelineStatus(status);
+                                      } catch (err) {
+                                        console.error('Cancel failed:', err);
+                                      } finally {
+                                        setPipelineCancelling(prev => {
+                                          const next = new Set(prev);
+                                          next.delete(item.atom_id);
+                                          return next;
+                                        });
+                                      }
+                                    }}
+                                    disabled={pipelineCancelling.has(item.atom_id)}
+                                    className="shrink-0 p-1 text-[var(--color-text-secondary)] hover:text-red-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    title={item.status === 'processing' ? 'Unstick (reset to pending)' : 'Skip embedding for this atom'}
+                                  >
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Failed atoms list */}
+                        {pipelineStatus.failed_count > 0 && (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium text-[var(--color-text-primary)]">
+                                Failed Atoms ({pipelineStatus.failed_count})
+                              </span>
+                              <button
+                                onClick={async () => {
+                                  if (!pipelineStatus?.failed.length) return;
+                                  setPipelineRetryingAll(true);
+                                  try {
+                                    await Promise.all(pipelineStatus.failed.map(f => retryEmbedding(f.atom_id)));
+                                    const data = await getPipelineStatus();
+                                    setPipelineStatus(data);
+                                  } catch (err) {
+                                    console.error('Retry all failed:', err);
+                                  } finally {
+                                    setPipelineRetryingAll(false);
+                                  }
+                                }}
+                                disabled={pipelineRetryingAll}
+                                className="px-3 py-1 text-xs font-medium rounded-md bg-red-500/20 text-red-400 hover:bg-red-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                              >
+                                {pipelineRetryingAll ? 'Retrying...' : 'Retry All Failed'}
+                              </button>
+                            </div>
+                            <div className="space-y-2 max-h-60 overflow-y-auto">
+                              {pipelineStatus.failed.map((atom) => (
+                                <div key={atom.atom_id} className="flex items-start gap-3 p-3 rounded-lg bg-[var(--color-bg-card)] border border-[var(--color-border)]">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-medium text-[var(--color-text-primary)] truncate">
+                                      {atom.title || 'Untitled'}
+                                    </div>
+                                    {atom.error && (
+                                      <div className="mt-1 text-xs font-mono text-red-400 leading-relaxed break-all">
+                                        {atom.error}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <button
+                                    onClick={async () => {
+                                      setPipelineRetrying(prev => new Set(prev).add(atom.atom_id));
+                                      try {
+                                        await retryEmbedding(atom.atom_id);
+                                        const data = await getPipelineStatus();
+                                        setPipelineStatus(data);
+                                      } catch (err) {
+                                        console.error('Retry failed:', err);
+                                      } finally {
+                                        setPipelineRetrying(prev => {
+                                          const next = new Set(prev);
+                                          next.delete(atom.atom_id);
+                                          return next;
+                                        });
+                                      }
+                                    }}
+                                    disabled={pipelineRetrying.has(atom.atom_id)}
+                                    className="shrink-0 px-2.5 py-1 text-xs font-medium rounded-md bg-[var(--color-bg-main)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-[var(--color-border)]"
+                                  >
+                                    {pipelineRetrying.has(atom.atom_id) ? 'Retrying...' : 'Retry'}
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {pipelineStatus.failed_count === 0 && pipelineStatus.pending === 0 && pipelineStatus.processing === 0 && (
+                          <div className="text-sm text-[var(--color-text-secondary)]">
+                            All atoms embedded successfully.
+                          </div>
+                        )}
+
+                        {/* Action buttons */}
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={async () => {
+                              setPipelineActionInProgress('reset');
+                              try {
+                                await resetStuckProcessing();
+                                const data = await getPipelineStatus();
+                                setPipelineStatus(data);
+                              } catch (err) {
+                                console.error('Reset stuck failed:', err);
+                              } finally {
+                                setPipelineActionInProgress(null);
+                              }
+                            }}
+                            disabled={pipelineActionInProgress !== null}
+                            className="px-3 py-1.5 text-xs font-medium rounded-md bg-[var(--color-bg-card)] text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-bg-hover)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors border border-[var(--color-border)]"
+                          >
+                            {pipelineActionInProgress === 'reset' ? 'Resetting...' : 'Reset Stuck'}
+                          </button>
+                          <button
+                            onClick={async () => {
+                              setPipelineActionInProgress('process');
+                              try {
+                                await processPendingEmbeddings();
+                                const data = await getPipelineStatus();
+                                setPipelineStatus(data);
+                              } catch (err) {
+                                console.error('Process pending failed:', err);
+                              } finally {
+                                setPipelineActionInProgress(null);
+                              }
+                            }}
+                            disabled={pipelineActionInProgress !== null}
+                            className="px-3 py-1.5 text-xs font-medium rounded-md bg-[var(--color-accent)] text-white hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          >
+                            {pipelineActionInProgress === 'process' ? 'Processing...' : 'Process Pending'}
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-sm text-[var(--color-text-secondary)]">Loading...</div>
+                    )}
+                  </div>
+
                 </>
               )}
 
@@ -2298,6 +2547,10 @@ export function SettingsPage() {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
                         Claude Desktop Integration
+                        <span className="ml-auto text-xs text-green-400 flex items-center gap-1.5">
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500" />
+                          Connected
+                        </span>
                       </button>
 
                       {showMcpSetup && (
@@ -2377,24 +2630,6 @@ export function SettingsPage() {
           </div>
         )}
 
-        {/* Re-embedding confirmation dialog */}
-        {pendingEmbeddingChange && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-            <div className="bg-[var(--color-bg-panel)] border border-[var(--color-border)] rounded-lg shadow-xl p-6 mx-8 max-w-sm space-y-4">
-              <div className="space-y-2">
-                <h3 className="text-sm font-semibold text-[var(--color-text-primary)]">Re-embed all atoms?</h3>
-                <p className="text-xs text-[var(--color-text-secondary)]">
-                  Changing the embedding model to <span className="font-medium text-[var(--color-text-primary)]">{pendingEmbeddingChange.label}</span> will
-                  re-embed all atoms. This may take a while and will use API credits.
-                </p>
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="secondary" onClick={cancelEmbeddingChange}>Cancel</Button>
-                <Button onClick={confirmEmbeddingChange}>Re-embed</Button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

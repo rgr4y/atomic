@@ -175,6 +175,15 @@ export const COMMAND_MAP: Record<string, CommandSpec> = {
     method: 'GET',
     path: '/api/embeddings/status',
   },
+  get_pipeline_items: {
+    method: 'GET',
+    path: (a) => `/api/embeddings/items?status=${encodeURIComponent(a.status as string)}`,
+  },
+  cancel_pipeline_item: {
+    method: 'POST',
+    path: (a) => `/api/embeddings/cancel/${encodeURIComponent(a.atomId as string)}`,
+    transformResponse: (d: any) => d.status as string,
+  },
 
   // ==================== Wiki ====================
   get_all_wiki_articles: {

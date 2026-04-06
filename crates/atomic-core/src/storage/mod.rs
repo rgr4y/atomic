@@ -68,6 +68,28 @@ impl StorageBackend {
         }
     }
 
+    /// List pipeline items by embedding status.
+    pub(crate) fn get_pipeline_items(&self, status: &str) -> Result<Vec<crate::models::PipelineItem>, AtomicCoreError> {
+        match self {
+            StorageBackend::Sqlite(s) => s.get_pipeline_items_sync(status),
+            #[cfg(feature = "postgres")]
+            StorageBackend::Postgres(_) => Err(AtomicCoreError::DatabaseOperation(
+                "Pipeline items not yet implemented for Postgres".to_string(),
+            )),
+        }
+    }
+
+    /// Cancel a single pipeline item (unstick or skip).
+    pub(crate) fn cancel_pipeline_item(&self, atom_id: &str) -> Result<String, AtomicCoreError> {
+        match self {
+            StorageBackend::Sqlite(s) => s.cancel_pipeline_item_sync(atom_id),
+            #[cfg(feature = "postgres")]
+            StorageBackend::Postgres(_) => Err(AtomicCoreError::DatabaseOperation(
+                "Cancel pipeline item not yet implemented for Postgres".to_string(),
+            )),
+        }
+    }
+
     /// Get pipeline status (embedding counts + failed atoms).
     pub(crate) fn get_pipeline_status(&self) -> Result<crate::models::PipelineStatus, AtomicCoreError> {
         match self {

@@ -148,7 +148,7 @@ impl SqliteStorage {
             .map_err(|e| AtomicCoreError::Lock(e.to_string()))?;
 
         let embedding_count = conn.execute(
-            "UPDATE atoms SET embedding_status = 'pending' WHERE embedding_status = 'processing'",
+            "UPDATE atoms SET embedding_status = 'pending' WHERE embedding_status IN ('processing', 'queued')",
             [],
         )?;
 
@@ -343,7 +343,7 @@ impl SqliteStorage {
             .lock()
             .map_err(|e| AtomicCoreError::Lock(e.to_string()))?;
         let mut stmt = conn.prepare(
-            "UPDATE atoms SET embedding_status = 'processing'
+            "UPDATE atoms SET embedding_status = 'queued'
              WHERE id IN (SELECT id FROM atoms WHERE embedding_status = 'pending' LIMIT ?1)
              RETURNING id, content",
         )?;
@@ -468,8 +468,8 @@ impl SqliteStorage {
             .lock()
             .map_err(|e| AtomicCoreError::Lock(e.to_string()))?;
         let mut stmt = conn.prepare(
-            "UPDATE atoms SET embedding_status = 'processing'
-             WHERE embedding_status IN ('pending', 'processing')
+            "UPDATE atoms SET embedding_status = 'queued'
+             WHERE embedding_status IN ('pending', 'queued')
              RETURNING id, content",
         )?;
         let results = stmt
@@ -485,7 +485,7 @@ impl SqliteStorage {
             .lock()
             .map_err(|e| AtomicCoreError::Lock(e.to_string()))?;
         let mut stmt = conn.prepare(
-            "UPDATE atoms SET embedding_status = 'processing'
+            "UPDATE atoms SET embedding_status = 'queued'
              RETURNING id, content",
         )?;
         let results = stmt
@@ -494,10 +494,70 @@ impl SqliteStorage {
         Ok(results)
     }
 
+    /// List atoms in a given embedding status (pending, processing, failed).
+    pub(crate) fn get_pipeline_items_sync(&self, status: &str) -> StorageResult<Vec<PipelineItem>> {
+        let conn = self.db.read_conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, title, embedding_status, updated_at FROM atoms WHERE embedding_status = ?1 ORDER BY updated_at DESC LIMIT 200",
+        )?;
+        let items = stmt
+            .query_map(rusqlite::params![status], |row| {
+                Ok(PipelineItem {
+                    atom_id: row.get(0)?,
+                    title: row.get(1)?,
+                    status: row.get(2)?,
+                    updated_at: row.get(3)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(items)
+    }
+
+    /// Cancel a single pipeline item: reset its embedding status to 'pending' (unstick)
+    /// or if already pending, set to 'complete' with no embeddings (skip it).
+    pub(crate) fn cancel_pipeline_item_sync(&self, atom_id: &str) -> StorageResult<String> {
+        let conn = self
+            .db
+            .conn
+            .lock()
+            .map_err(|e| AtomicCoreError::Lock(e.to_string()))?;
+
+        let current_status: String = conn.query_row(
+            "SELECT embedding_status FROM atoms WHERE id = ?1",
+            rusqlite::params![atom_id],
+            |r| r.get(0),
+        ).map_err(|_| AtomicCoreError::NotFound(format!("Atom {atom_id} not found")))?;
+
+        match current_status.as_str() {
+            "processing" => {
+                // Unstick: reset back to pending
+                conn.execute(
+                    "UPDATE atoms SET embedding_status = 'pending', embedding_error = NULL WHERE id = ?1",
+                    rusqlite::params![atom_id],
+                )?;
+                Ok("pending".to_string())
+            }
+            "queued" | "pending" => {
+                // Cancel: skip embedding entirely
+                conn.execute(
+                    "UPDATE atoms SET embedding_status = 'skipped', embedding_error = NULL WHERE id = ?1",
+                    rusqlite::params![atom_id],
+                )?;
+                Ok("skipped".to_string())
+            }
+            other => Ok(other.to_string()),
+        }
+    }
+
     pub(crate) fn get_pipeline_status_sync(&self) -> StorageResult<PipelineStatus> {
         let conn = self.db.read_conn()?;
         let pending: i32 = conn.query_row(
             "SELECT COUNT(*) FROM atoms WHERE embedding_status = 'pending'",
+            [],
+            |r| r.get(0),
+        )?;
+        let queued: i32 = conn.query_row(
+            "SELECT COUNT(*) FROM atoms WHERE embedding_status = 'queued'",
             [],
             |r| r.get(0),
         )?;
@@ -534,6 +594,7 @@ impl SqliteStorage {
 
         Ok(PipelineStatus {
             pending,
+            queued,
             processing,
             complete,
             failed_count,

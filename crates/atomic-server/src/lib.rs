@@ -70,6 +70,8 @@ pub use utoipa_scalar::{Scalar, Servable};
         routes::embedding::retry_tagging,
         routes::embedding::reembed_all_atoms,
         routes::embedding::reset_stuck_processing,
+        routes::embedding::get_pipeline_items,
+        routes::embedding::cancel_pipeline_item,
         routes::embedding::get_embedding_status,
         // Canvas
         routes::canvas::get_positions,

@@ -101,8 +101,7 @@ pub struct EmbedError {
 }
 
 /// Maximum texts per embedding API call for cross-atom batching.
-/// OpenRouter/OpenAI handle batches well at this size.
-const EMBEDDING_BATCH_SIZE: usize = 150;
+const EMBEDDING_BATCH_SIZE: usize = 50;
 
 /// Metadata for a chunk awaiting embedding
 #[derive(Clone)]
@@ -112,18 +111,32 @@ struct PendingChunk {
     content: String,
 }
 
-/// Embed a list of chunks in adaptive batches.
-/// Splits into batches of EMBEDDING_BATCH_SIZE, calls the API, and on failure
-/// retries at half batch size recursively. Returns (embedded, failed: Vec<(atom_id, error)>).
-async fn embed_chunks_batched(
+/// Embed chunks in batches, storing results and marking atoms complete as each batch finishes.
+///
+/// Instead of collecting all results and storing at the end, this stores per-batch so atoms
+/// show as 'complete' incrementally rather than all at once after the last batch.
+/// Atoms that span multiple batches are completed once all their chunks are embedded.
+async fn embed_chunks_batched<F>(
     config: &ProviderConfig,
     chunks: Vec<PendingChunk>,
-) -> (Vec<(PendingChunk, Vec<f32>)>, Vec<(String, String)>) {
+    storage: &StorageBackend,
+    on_event: &F,
+) -> (Vec<String>, Vec<(String, String)>)
+where
+    F: Fn(EmbeddingEvent) + Send + Sync + Clone + 'static,
+{
     if chunks.is_empty() {
         return (vec![], vec![]);
     }
 
-    let mut results: Vec<(PendingChunk, Vec<f32>)> = Vec::with_capacity(chunks.len());
+    // Track how many chunks each atom expects vs. how many we've embedded
+    let mut expected_per_atom: HashMap<String, usize> = HashMap::new();
+    for chunk in &chunks {
+        *expected_per_atom.entry(chunk.atom_id.clone()).or_default() += 1;
+    }
+
+    let mut embedded_per_atom: HashMap<String, Vec<(String, Vec<f32>)>> = HashMap::new();
+    let mut completed_atom_ids: Vec<String> = Vec::new();
     let mut failed_atoms: Vec<(String, String)> = Vec::new();
 
     // Split chunks into batches
@@ -136,20 +149,67 @@ async fn embed_chunks_batched(
 
     let total_batches = batches.len();
     for (batch_idx, batch) in batches.into_iter().enumerate() {
+        // Mark atoms in this batch as 'processing' (they're about to hit the API)
+        let mut seen = std::collections::HashSet::new();
+        for chunk in &batch {
+            if seen.insert(chunk.atom_id.clone()) {
+                storage.set_embedding_status_sync(&chunk.atom_id, "processing", None).ok();
+            }
+        }
+
         tracing::info!(
             batch = batch_idx + 1,
             total_batches,
             chunks = batch.len(),
             "Embedding batch"
         );
-        let (mut successes, mut failures) = embed_batch_adaptive(config, batch).await;
-        results.append(&mut successes);
+        let (successes, mut failures) = embed_batch_adaptive(config, batch).await;
         failed_atoms.append(&mut failures);
+
+        // Accumulate successful embeddings per atom
+        for (chunk, embedding) in successes {
+            embedded_per_atom
+                .entry(chunk.atom_id.clone())
+                .or_default()
+                .push((chunk.content, embedding));
+        }
+
+        // Store and complete any atoms that have all their chunks embedded
+        let ready_atom_ids: Vec<String> = embedded_per_atom
+            .keys()
+            .filter(|id| {
+                embedded_per_atom.get(*id).map_or(false, |chunks| {
+                    chunks.len() == *expected_per_atom.get(*id).unwrap_or(&0)
+                })
+            })
+            .cloned()
+            .collect();
+
+        for atom_id in ready_atom_ids {
+            if let Some(chunks) = embedded_per_atom.remove(&atom_id) {
+                match storage.save_chunks_and_embeddings_sync(&atom_id, &chunks) {
+                    Ok(()) => {
+                        storage.set_embedding_status_sync(&atom_id, "complete", None).ok();
+                        completed_atom_ids.push(atom_id.clone());
+                        on_event(EmbeddingEvent::EmbeddingComplete {
+                            atom_id: atom_id.clone(),
+                        });
+                    }
+                    Err(_) => {
+                        storage.set_embedding_status_sync(&atom_id, "failed", Some("Failed to store embeddings in DB")).ok();
+                        on_event(EmbeddingEvent::EmbeddingFailed {
+                            atom_id: atom_id.clone(),
+                            error: "Failed to store embeddings in DB".to_string(),
+                        });
+                    }
+                }
+            }
+        }
     }
 
     failed_atoms.sort_by(|a, b| a.0.cmp(&b.0));
     failed_atoms.dedup_by(|a, b| a.0 == b.0);
-    (results, failed_atoms)
+    (completed_atom_ids, failed_atoms)
 }
 
 /// Try to embed a batch. On failure, split in half and retry each half.
@@ -718,7 +778,7 @@ pub async fn process_embedding_batch_with_settings<F>(
 
 async fn process_embedding_batch_inner<F>(
     storage: StorageBackend,
-    atoms: Vec<(String, String)>,
+    mut atoms: Vec<(String, String)>,
     skip_tagging: bool,
     on_event: F,
     external_settings: Option<HashMap<String, String>>,
@@ -729,6 +789,9 @@ async fn process_embedding_batch_inner<F>(
     if total_count == 0 {
         return;
     }
+
+    // Sort shortest content first so small atoms complete quickly
+    atoms.sort_by_key(|(_, content)| content.len());
 
     tracing::info!(
         total_count,
@@ -852,48 +915,12 @@ async fn process_embedding_batch_inner<F>(
         }
     }
 
-    // === Phase 3: Cross-atom batched embedding API calls ===
-    let (embedded_chunks, failed_atoms) =
-        embed_chunks_batched(&provider_config, all_chunks).await;
+    // === Phase 3+4: Embed chunks in batches, storing results per-batch ===
+    let (completed_atom_ids, failed_atoms) =
+        embed_chunks_batched(&provider_config, all_chunks, &storage, &on_event).await;
 
-    // === Phase 4: Store results in DB per-atom ===
-    let mut completed_atom_ids = Vec::new();
+    // Mark atoms that failed embedding API calls
     {
-        // Group embedded chunks by atom_id
-        let mut by_atom: HashMap<String, Vec<(usize, String, Vec<f32>)>> = HashMap::new();
-        for (chunk, embedding) in embedded_chunks {
-            by_atom
-                .entry(chunk.atom_id.clone())
-                .or_default()
-                .push((chunk.chunk_index, chunk.content, embedding));
-        }
-
-        // Store successful embeddings
-        for (atom_id, chunks) in &by_atom {
-            let chunks_with_embeddings: Vec<(String, Vec<f32>)> = chunks
-                .iter()
-                .map(|(_, content, embedding)| (content.clone(), embedding.clone()))
-                .collect();
-
-            match storage.save_chunks_and_embeddings_sync(atom_id, &chunks_with_embeddings) {
-                Ok(()) => {
-                    storage.set_embedding_status_sync(atom_id, "complete", None).ok();
-                    completed_atom_ids.push(atom_id.clone());
-                    on_event(EmbeddingEvent::EmbeddingComplete {
-                        atom_id: atom_id.clone(),
-                    });
-                }
-                Err(_) => {
-                    storage.set_embedding_status_sync(atom_id, "failed", Some("Failed to store embeddings in DB")).ok();
-                    on_event(EmbeddingEvent::EmbeddingFailed {
-                        atom_id: atom_id.clone(),
-                        error: "Failed to store embeddings in DB".to_string(),
-                    });
-                }
-            }
-        }
-
-        // Mark atoms that failed embedding API calls
         for (atom_id, error) in &failed_atoms {
             storage.set_embedding_status_sync(atom_id, "failed", Some(error)).ok();
             on_event(EmbeddingEvent::EmbeddingFailed {

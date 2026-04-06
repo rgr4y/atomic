@@ -77,6 +77,34 @@ pub async fn get_pipeline_status(db: Db) -> HttpResponse {
     }
 }
 
+#[derive(serde::Deserialize)]
+pub struct PipelineItemsQuery {
+    pub status: String,
+}
+
+#[utoipa::path(get, path = "/api/embeddings/items", params(("status" = String, Query, description = "Embedding status filter (pending, processing, failed)")), responses((status = 200, description = "List of pipeline items")), tag = "embeddings")]
+pub async fn get_pipeline_items(
+    db: Db,
+    query: web::Query<PipelineItemsQuery>,
+) -> HttpResponse {
+    match db.0.get_pipeline_items(&query.status) {
+        Ok(items) => HttpResponse::Ok().json(items),
+        Err(e) => crate::error::error_response(e),
+    }
+}
+
+#[utoipa::path(post, path = "/api/embeddings/cancel/{atom_id}", params(("atom_id" = String, Path, description = "Atom ID")), responses((status = 200, description = "New status of the atom"), (status = 404, description = "Atom not found", body = ApiErrorResponse)), tag = "embeddings")]
+pub async fn cancel_pipeline_item(
+    db: Db,
+    path: web::Path<String>,
+) -> HttpResponse {
+    let atom_id = path.into_inner();
+    match db.0.cancel_pipeline_item(&atom_id) {
+        Ok(new_status) => HttpResponse::Ok().json(serde_json::json!({"status": new_status})),
+        Err(e) => crate::error::error_response(e),
+    }
+}
+
 #[utoipa::path(get, path = "/api/atoms/{id}/embedding-status", params(("id" = String, Path, description = "Atom ID")), responses((status = 200, description = "Embedding status"), (status = 404, description = "Atom not found", body = ApiErrorResponse)), tag = "embeddings")]
 pub async fn get_embedding_status(
     db: Db,

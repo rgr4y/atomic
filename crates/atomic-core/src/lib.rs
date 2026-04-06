@@ -1307,6 +1307,16 @@ impl AtomicCore {
         self.storage.get_pipeline_status()
     }
 
+    /// List pipeline items by embedding status (pending, processing, failed)
+    pub fn get_pipeline_items(&self, status: &str) -> Result<Vec<models::PipelineItem>, AtomicCoreError> {
+        self.storage.get_pipeline_items(status)
+    }
+
+    /// Cancel a single pipeline item (unstick processing → pending, or skip pending)
+    pub fn cancel_pipeline_item(&self, atom_id: &str) -> Result<String, AtomicCoreError> {
+        self.storage.cancel_pipeline_item(atom_id)
+    }
+
     /// Process pending tag extraction for atoms with complete embeddings
     pub fn process_pending_tagging<F>(&self, on_event: F) -> Result<i32, AtomicCoreError>
     where

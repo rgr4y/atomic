@@ -649,6 +649,7 @@ pub struct SettingChangeResult {
 #[derive(Debug, Clone, Serialize)]
 pub struct PipelineStatus {
     pub pending: i32,
+    pub queued: i32,
     pub processing: i32,
     pub complete: i32,
     pub failed_count: i32,
@@ -662,5 +663,14 @@ pub struct FailedAtom {
     pub title: String,
     pub snippet: String,
     pub error: Option<String>,
+    pub updated_at: String,
+}
+
+/// An atom in the embedding pipeline (pending or processing)
+#[derive(Debug, Clone, Serialize)]
+pub struct PipelineItem {
+    pub atom_id: String,
+    pub title: String,
+    pub status: String,
     pub updated_at: String,
 }

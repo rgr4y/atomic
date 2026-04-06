@@ -61,6 +61,7 @@ export async function getEmbeddingStatus(atomId: string): Promise<string> {
 // Pipeline status dashboard
 export interface PipelineStatus {
   pending: number;
+  queued: number;
   processing: number;
   complete: number;
   failed_count: number;
@@ -77,6 +78,21 @@ export interface FailedAtom {
 
 export async function getPipelineStatus(): Promise<PipelineStatus> {
   return getTransport().invoke('get_pipeline_status', {});
+}
+
+export interface PipelineItem {
+  atom_id: string;
+  title: string;
+  status: string;
+  updated_at: string;
+}
+
+export async function getPipelineItems(status: string): Promise<PipelineItem[]> {
+  return getTransport().invoke('get_pipeline_items', { status });
+}
+
+export async function cancelPipelineItem(atomId: string): Promise<string> {
+  return getTransport().invoke('cancel_pipeline_item', { atomId });
 }
 
 // Wiki commands
