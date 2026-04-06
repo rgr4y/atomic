@@ -196,8 +196,8 @@ export const useAtomsStore = create<AtomsStore>((set, get) => ({
   // Filter & sort state
   sourceFilter: 'all' as SourceFilterType,
   sourceValue: null,
-  sortBy: (localStorage.getItem('atomic-sort-by') as SortField) || 'updated' as SortField,
-  sortOrder: (localStorage.getItem('atomic-sort-order') as SortOrder) || 'desc' as SortOrder,
+  sortBy: 'updated' as SortField,
+  sortOrder: 'desc' as SortOrder,
   availableSources: [],
 
   fetchAtoms: async () => {
@@ -493,7 +493,7 @@ export const useAtomsStore = create<AtomsStore>((set, get) => ({
   },
 
   setSortBy: (field: SortField) => {
-    localStorage.setItem('atomic-sort-by', field);
+    getTransport().invoke('set_setting', { key: 'sort_by', value: field }).catch(() => {});
     set({ sortBy: field, nextCursor: null, nextCursorId: null });
     const { currentTagFilter } = get();
     if (currentTagFilter) {
@@ -504,7 +504,7 @@ export const useAtomsStore = create<AtomsStore>((set, get) => ({
   },
 
   setSortOrder: (order: SortOrder) => {
-    localStorage.setItem('atomic-sort-order', order);
+    getTransport().invoke('set_setting', { key: 'sort_order', value: order }).catch(() => {});
     set({ sortOrder: order, nextCursor: null, nextCursorId: null });
     const { currentTagFilter } = get();
     if (currentTagFilter) {

@@ -13,6 +13,7 @@ import { useTagsStore } from '../../stores/tags';
 import { useUIStore } from '../../stores/ui';
 import { useTheme, useFont, useFontSize } from '../../hooks';
 import { verifyProviderConfigured } from '../../lib/api';
+import { useSettingsStore } from '../../stores/settings';
 import { isTauri } from '../../lib/platform';
 
 
@@ -131,6 +132,14 @@ export function Layout() {
   }, []);
 
   const initializeApp = async () => {
+    // Hydrate sort prefs from server settings before first fetch
+    await useSettingsStore.getState().fetchSettings();
+    const settings = useSettingsStore.getState().settings;
+    const sortUpdates: Record<string, unknown> = {};
+    if (settings.sort_by) sortUpdates.sortBy = settings.sort_by;
+    if (settings.sort_order) sortUpdates.sortOrder = settings.sort_order;
+    if (Object.keys(sortUpdates).length > 0) useAtomsStore.setState(sortUpdates);
+
     await Promise.all([fetchAtoms(), fetchTags()]);
   };
 
