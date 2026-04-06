@@ -1400,6 +1400,8 @@ impl AtomicCore {
 
         let mut pending_count = 0i32;
         if dimension_changed {
+            // Also reset failed atoms so they get re-embedded with the new model
+            self.storage.reset_failed_embeddings_sync()?;
             pending_count = self.spawn_reembed_pending(on_event.clone())?;
         }
 

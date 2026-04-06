@@ -109,12 +109,14 @@ pub fn get_embedding_dimension(model: &str) -> usize {
     let base_model = model.split(':').next().unwrap_or(model);
 
     match base_model {
-        "nomic-embed-text" => 768,
+        "nomic-embed-text" | "nomic-embed-text-v2-moe" => 768,
         "mxbai-embed-large" => 1024,
         "all-minilm" => 384,
         "snowflake-arctic-embed" => 1024,
         "bge-m3" => 1024,
         "bge-large" => 1024,
+        "embeddinggemma" => 768,
+        "qwen3-embedding" => 2048,  // default (latest); 0.6b variant outputs 1024
         // Default to 768 for unknown embedding models
         _ => 768,
     }

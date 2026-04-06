@@ -138,6 +138,7 @@ where
     let mut embedded_per_atom: HashMap<String, Vec<(String, Vec<f32>)>> = HashMap::new();
     let mut completed_atom_ids: Vec<String> = Vec::new();
     let mut failed_atoms: Vec<(String, String)> = Vec::new();
+    let mut dimension_checked = false;
 
     // Split chunks into batches
     let batches: Vec<Vec<PendingChunk>> = chunks
@@ -165,6 +166,30 @@ where
         );
         let (successes, mut failures) = embed_batch_adaptive(config, batch).await;
         failed_atoms.append(&mut failures);
+
+        // On first batch with results, verify vec_chunks dimension matches
+        if !dimension_checked && !successes.is_empty() {
+            dimension_checked = true;
+            let actual_dim = successes[0].1.len();
+            if let Ok(Some(table_dim)) = storage.get_embedding_dimension_sync() {
+                if actual_dim != table_dim {
+                    tracing::warn!(
+                        table_dim,
+                        actual_dim,
+                        "Embedding dimension mismatch — recreating vector index"
+                    );
+                    if let Err(e) = storage.recreate_vector_index_sync(actual_dim) {
+                        tracing::error!(error = %e, "Failed to recreate vector index");
+                        // Fail all remaining atoms
+                        let err = format!("Vector index recreation failed: {e}");
+                        for (atom_id, _) in &expected_per_atom {
+                            storage.set_embedding_status_sync(atom_id, "failed", Some(&err)).ok();
+                        }
+                        return (vec![], vec![]);
+                    }
+                }
+            }
+        }
 
         // Accumulate successful embeddings per atom
         for (chunk, embedding) in successes {
