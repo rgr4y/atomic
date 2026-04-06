@@ -113,12 +113,14 @@ export function AtomEditor({ atomId, onSaved }: AtomEditorProps) {
   const [existingAtom, setExistingAtom] = useState<AtomWithTags | null>(null);
   const [isLoadingAtom, setIsLoadingAtom] = useState(false);
   const [isEditingUrl, setIsEditingUrl] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
 
   const isEditing = atomId !== null;
 
   useEffect(() => {
     if (isEditing && atomId) {
       setIsLoadingAtom(true);
+      setIsDirty(false);
       getTransport().invoke<AtomWithTags | null>('get_atom_by_id', { id: atomId })
         .then((fetchedAtom) => {
           setExistingAtom(fetchedAtom);
@@ -131,6 +133,7 @@ export function AtomEditor({ atomId, onSaved }: AtomEditorProps) {
         });
     } else {
       setExistingAtom(null);
+      setIsDirty(false);
     }
   }, [isEditing, atomId]);
 
@@ -139,6 +142,7 @@ export function AtomEditor({ atomId, onSaved }: AtomEditorProps) {
       setContent(existingAtom.content);
       setSourceUrl(existingAtom.source_url || '');
       setSelectedTags(existingAtom.tags);
+      // Don't mark dirty — this is loading, not user editing
     }
   }, [existingAtom]);
 
@@ -152,10 +156,13 @@ export function AtomEditor({ atomId, onSaved }: AtomEditorProps) {
   selectedTagsRef.current = selectedTags;
   onSavedRef.current = onSaved;
 
+  const isDirtyRef = useRef(isDirty);
+  isDirtyRef.current = isDirty;
+
   // Debounced background save while typing
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (!content.trim()) return;
+    if (!content.trim() || !isDirty) return;
 
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
 
@@ -176,10 +183,11 @@ export function AtomEditor({ atomId, onSaved }: AtomEditorProps) {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-  }, [content, selectedTags, sourceUrl, isEditing, atomId, updateAtom, createAtom]);
+  }, [content, selectedTags, sourceUrl, isDirty, isEditing, atomId, updateAtom, createAtom]);
 
   useEffect(() => {
     return () => {
+      if (!isDirtyRef.current) return;
       const c = contentRef.current;
       const url = sourceUrlRef.current;
       const tags = selectedTagsRef.current;
@@ -211,7 +219,7 @@ export function AtomEditor({ atomId, onSaved }: AtomEditorProps) {
         <div className="w-1/2 overflow-hidden">
           <CodeMirror
             value={content}
-            onChange={setContent}
+            onChange={(val) => { setContent(val); setIsDirty(true); }}
             theme={oneDark}
             extensions={[markdown()]}
             className="h-full"
@@ -245,12 +253,12 @@ export function AtomEditor({ atomId, onSaved }: AtomEditorProps) {
               key={tag.id}
               name={tag.name}
               size="sm"
-              onRemove={() => setSelectedTags(selectedTags.filter(t => t.id !== tag.id))}
+              onRemove={() => { setSelectedTags(selectedTags.filter(t => t.id !== tag.id)); setIsDirty(true); }}
             />
           ))}
           <InlineTagInput
             selectedTags={selectedTags}
-            onTagsChange={setSelectedTags}
+            onTagsChange={(tags) => { setSelectedTags(tags); setIsDirty(true); }}
           />
         </div>
         {/* Source URL: glass input when empty, clickable link when filled */}
@@ -272,7 +280,7 @@ export function AtomEditor({ atomId, onSaved }: AtomEditorProps) {
           <input
             autoFocus={isEditingUrl}
             value={sourceUrl}
-            onChange={(e) => setSourceUrl(e.target.value)}
+            onChange={(e) => { setSourceUrl(e.target.value); setIsDirty(true); }}
             onBlur={() => setIsEditingUrl(false)}
             placeholder="Source URL"
             className="shrink-0 w-[220px] px-3 py-1.5 text-sm text-right rounded-lg bg-white/8 backdrop-blur-sm border border-white/10 text-[var(--color-text-secondary)] placeholder:text-[var(--color-text-tertiary)] focus:outline-none focus:text-[var(--color-text-primary)] focus:border-white/20 focus:bg-white/12 transition-all duration-200"
