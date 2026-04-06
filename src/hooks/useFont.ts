@@ -29,9 +29,8 @@ export function useFontSize() {
   const fontSize = (settings.font_size as FontSize) || 'regular';
 
   useEffect(() => {
-    const body = document.documentElement;
-    body.classList.remove('font-size-small', 'font-size-regular', 'font-size-large');
-    body.classList.add(`font-size-${fontSize}`);
+    document.body.classList.remove('font-size-small', 'font-size-regular', 'font-size-large');
+    document.body.classList.add(`font-size-${fontSize}`);
   }, [fontSize]);
 
   return fontSize;

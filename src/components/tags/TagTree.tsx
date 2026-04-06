@@ -4,7 +4,6 @@ import { TagNode } from './TagNode';
 import { ContextMenu } from '../ui/ContextMenu';
 import { Modal } from '../ui/Modal';
 import { Input } from '../ui/Input';
-import { Button } from '../ui/Button';
 import { useTagsStore, TagWithCount } from '../../stores/tags';
 import { useUIStore } from '../../stores/ui';
 import { useAtomsStore } from '../../stores/atoms';

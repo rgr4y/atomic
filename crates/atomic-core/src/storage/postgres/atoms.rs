@@ -1004,11 +1004,13 @@ impl AtomStore for PostgresStorage {
             String, String, String, String,
             Option<String>, Option<String>, Option<String>,
             String, String, String, String,
+            Option<String>, Option<String>,
         )> = sqlx::query_as(
             "SELECT id, content, title, snippet, source_url, source, published_at,
                     created_at, updated_at,
                     COALESCE(embedding_status, 'pending'),
-                    COALESCE(tagging_status, 'pending')
+                    COALESCE(tagging_status, 'pending'),
+                    embedding_error, tagging_error
              FROM atoms WHERE source_url = $1 AND db_id = $2",
         )
         .bind(url)

@@ -183,10 +183,19 @@ code, pre, kbd, samp, .cm-editor {
   letter-spacing: normal;
 }
 
+.cm-editor {
+  height: 100%;
+}
+
 #root {
   height: 100%;
   overflow: hidden;
 }
+
+/* Font size control — scales via root font-size (all rem units scale) */
+body.font-size-small { font-size: 14px; }
+body.font-size-regular { font-size: 16px; }
+body.font-size-large { font-size: 18px; }
 
 /* Toast styling (sonner) */
 [data-sonner-toaster] {
@@ -446,18 +455,6 @@ article, .prose, .select-text {
   height: 0;
 }
 
-/* Font size control classes */
-body.font-size-small .milkdown-editor-wrapper .ProseMirror {
-  font-size: 0.9375rem;
-}
-
-body.font-size-regular .milkdown-editor-wrapper .ProseMirror {
-  font-size: 1.0625rem;
-}
-
-body.font-size-large .milkdown-editor-wrapper .ProseMirror {
-  font-size: 1.1875rem;
-}
 
 /* Line clamp utilities for command palette */
 .line-clamp-2 {
