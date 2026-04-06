@@ -79,7 +79,7 @@ export function TagTree() {
     overscan: 20,
   });
 
-  // Scroll to selected tag
+  // Scroll to selected tag only when selection changes (not on expand/collapse)
   useEffect(() => {
     if (selectedTagId) {
       const index = tagIndexMap.get(selectedTagId);
@@ -89,7 +89,8 @@ export function TagTree() {
         }, 50);
       }
     }
-  }, [selectedTagId, tagIndexMap, virtualizer]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTagId]);
 
   const [contextMenu, setContextMenu] = useState<{
     position: { x: number; y: number } | null;
