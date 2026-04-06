@@ -9,7 +9,7 @@
 use crate::chunking::chunk_content;
 use crate::extraction::extract_tags_from_content;
 use crate::providers::traits::EmbeddingConfig;
-use crate::providers::{get_embedding_provider, get_model_capabilities, ProviderConfig, ProviderType};
+use crate::providers::{get_embedding_provider, ProviderConfig, ProviderType};
 use crate::storage::StorageBackend;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -195,11 +195,13 @@ where
                             atom_id: atom_id.clone(),
                         });
                     }
-                    Err(_) => {
-                        storage.set_embedding_status_sync(&atom_id, "failed", Some("Failed to store embeddings in DB")).ok();
+                    Err(e) => {
+                        let err_msg = format!("Failed to store embeddings in DB: {e}");
+                        tracing::error!(atom_id = %atom_id, error = %e, "Failed to store embeddings");
+                        storage.set_embedding_status_sync(&atom_id, "failed", Some(&err_msg)).ok();
                         on_event(EmbeddingEvent::EmbeddingFailed {
                             atom_id: atom_id.clone(),
-                            error: "Failed to store embeddings in DB".to_string(),
+                            error: err_msg,
                         });
                     }
                 }
@@ -1372,7 +1374,7 @@ pub fn compute_tag_embeddings_batch(
     }
 
     // Build the set of tags we're computing centroids for
-    let target_set: std::collections::HashSet<&str> =
+    let _target_set: std::collections::HashSet<&str> =
         tag_ids.iter().map(|s| s.as_str()).collect();
 
     // For each target tag, get its full descendant hierarchy. Build an inverted map:
