@@ -103,7 +103,7 @@ function InlineTagInput({ selectedTags, onTagsChange }: { selectedTags: Tag[]; o
   );
 }
 
-export function AtomEditor({ atomId, onSaved }: AtomEditorProps) {
+export function AtomEditor({ atomId, onClose, onSaved }: AtomEditorProps) {
   const createAtom = useAtomsStore(s => s.createAtom);
   const updateAtom = useAtomsStore(s => s.updateAtom);
   const fetchTags = useTagsStore(s => s.fetchTags);
@@ -114,6 +114,9 @@ export function AtomEditor({ atomId, onSaved }: AtomEditorProps) {
   const [isLoadingAtom, setIsLoadingAtom] = useState(false);
   const [isEditingUrl, setIsEditingUrl] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const deleteAtom = useAtomsStore(s => s.deleteAtom);
 
   const isEditing = atomId !== null;
 
@@ -213,9 +216,23 @@ export function AtomEditor({ atomId, onSaved }: AtomEditorProps) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Split pane: Editor on left, Preview on right */}
+      {/* Split pane: Preview on left, Editor on right */}
       <div className="flex-1 flex overflow-hidden gap-px bg-[var(--color-border)]">
-        {/* Left: CodeMirror editor - full height */}
+        {/* Left: Live preview (rendered markdown) - full height */}
+        <div className="w-1/2 overflow-y-auto bg-[var(--color-bg-panel)] px-6 py-4">
+          <article className="prose prose-invert prose-sm max-w-none prose-headings:text-[var(--color-text-primary)] prose-p:text-[var(--color-text-primary)] prose-a:text-[var(--color-text-primary)] prose-a:underline prose-a:decoration-[var(--color-border-hover)] hover:prose-a:decoration-current prose-strong:text-[var(--color-text-primary)] prose-code:text-[var(--color-accent-light)] prose-code:bg-[var(--color-bg-card)] prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-[var(--color-bg-card)] prose-pre:border prose-pre:border-[var(--color-border)] prose-blockquote:border-l-[var(--color-accent)] prose-blockquote:text-[var(--color-text-secondary)] prose-li:text-[var(--color-text-primary)] prose-hr:border-[var(--color-border)]">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                img: MarkdownImage,
+              }}
+            >
+              {content}
+            </ReactMarkdown>
+          </article>
+        </div>
+
+        {/* Right: CodeMirror editor - full height */}
         <div className="w-1/2 overflow-hidden">
           <CodeMirror
             value={content}
@@ -228,20 +245,6 @@ export function AtomEditor({ atomId, onSaved }: AtomEditorProps) {
               foldGutter: false,
             }}
           />
-        </div>
-
-        {/* Right: Live preview (rendered markdown) - full height */}
-        <div className="w-1/2 overflow-y-auto bg-[var(--color-bg-panel)] px-6 py-4">
-          <article className="prose prose-invert prose-sm max-w-none prose-headings:text-[var(--color-text-primary)] prose-p:text-[var(--color-text-primary)] prose-a:text-[var(--color-text-primary)] prose-a:underline prose-a:decoration-[var(--color-border-hover)] hover:prose-a:decoration-current prose-strong:text-[var(--color-text-primary)] prose-code:text-[var(--color-accent-light)] prose-code:bg-[var(--color-bg-card)] prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-[var(--color-bg-card)] prose-pre:border prose-pre:border-[var(--color-border)] prose-blockquote:border-l-[var(--color-accent)] prose-blockquote:text-[var(--color-text-secondary)] prose-li:text-[var(--color-text-primary)] prose-hr:border-[var(--color-border)]">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                img: MarkdownImage,
-              }}
-            >
-              {content}
-            </ReactMarkdown>
-          </article>
         </div>
       </div>
 
@@ -261,6 +264,49 @@ export function AtomEditor({ atomId, onSaved }: AtomEditorProps) {
             onTagsChange={(tags) => { setSelectedTags(tags); setIsDirty(true); }}
           />
         </div>
+        {/* Delete button (editing existing atoms only) */}
+        {isEditing && (
+          showDeleteConfirm ? (
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                onClick={async () => {
+                  setIsDeleting(true);
+                  try {
+                    await deleteAtom(atomId!);
+                    await fetchTags();
+                    onClose?.();
+                  } catch (e) {
+                    console.error('Failed to delete atom:', e);
+                  } finally {
+                    setIsDeleting(false);
+                    setShowDeleteConfirm(false);
+                  }
+                }}
+                disabled={isDeleting}
+                className="px-2 py-1 text-xs font-medium rounded bg-red-500/20 text-red-400 hover:bg-red-500/30 disabled:opacity-50 transition-colors"
+              >
+                {isDeleting ? 'Deleting...' : 'Confirm'}
+              </button>
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-2 py-1 text-xs text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowDeleteConfirm(true)}
+              className="shrink-0 p-1.5 text-[var(--color-text-secondary)] hover:text-red-400 transition-colors"
+              title="Delete atom"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          )
+        )}
+
         {/* Source URL: glass input when empty, clickable link when filled */}
         {sourceUrl && !isEditingUrl ? (
           <button
