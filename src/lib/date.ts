@@ -39,8 +39,10 @@ export function formatShortRelativeDate(dateString: string): string {
     return `${diffHours}h`;
   } else if (diffDays < 7) {
     return `${diffDays}d`;
-  } else {
+  } else if (date.getFullYear() === now.getFullYear()) {
     return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  } else {
+    return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
   }
 }
 
