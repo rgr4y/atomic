@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useLayoutEffect, ReactNode, useRef, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
 import { openExternalUrl } from '../../lib/platform';
 import { Button } from '../ui/Button';
 import { Modal } from '../ui/Modal';
@@ -454,7 +455,7 @@ export function AtomViewer({ atom, onClose, onEdit, highlightText }: AtomViewerP
           {chunks.slice(0, renderedChunkCount).map((chunk, index) => (
             <ReactMarkdown
               key={index}
-              remarkPlugins={[remarkGfm]}
+              remarkPlugins={[remarkGfm, remarkBreaks]}
               components={markdownComponents}
             >
               {chunk}

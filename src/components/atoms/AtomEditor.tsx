@@ -4,11 +4,13 @@ import { markdown } from '@codemirror/lang-markdown';
 import { oneDark } from '@codemirror/theme-one-dark';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
 import { getTransport } from '../../lib/transport';
 import { TagChip } from '../tags/TagChip';
 import { MarkdownImage } from '../ui/MarkdownImage';
 import { useAtomsStore, AtomWithTags, Tag } from '../../stores/atoms';
 import { useTagsStore } from '../../stores/tags';
+import { useUIStore } from '../../stores/ui';
 import { isValidUrl } from '../../lib/markdown';
 
 interface AtomEditorProps {
@@ -117,6 +119,8 @@ export function AtomEditor({ atomId, onClose, onSaved }: AtomEditorProps) {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const deleteAtom = useAtomsStore(s => s.deleteAtom);
+  const openLocalGraph = useUIStore(s => s.openLocalGraph);
+  const closeDrawer = useUIStore(s => s.closeDrawer);
 
   const isEditing = atomId !== null;
 
@@ -222,7 +226,7 @@ export function AtomEditor({ atomId, onClose, onSaved }: AtomEditorProps) {
         <div className="w-1/2 overflow-y-auto bg-[var(--color-bg-panel)] px-6 py-4">
           <article className="prose prose-invert prose-sm max-w-none prose-headings:text-[var(--color-text-primary)] prose-p:text-[var(--color-text-primary)] prose-a:text-[var(--color-text-primary)] prose-a:underline prose-a:decoration-[var(--color-border-hover)] hover:prose-a:decoration-current prose-strong:text-[var(--color-text-primary)] prose-code:text-[var(--color-accent-light)] prose-code:bg-[var(--color-bg-card)] prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-[var(--color-bg-card)] prose-pre:border prose-pre:border-[var(--color-border)] prose-blockquote:border-l-[var(--color-accent)] prose-blockquote:text-[var(--color-text-secondary)] prose-li:text-[var(--color-text-primary)] prose-hr:border-[var(--color-border)]">
             <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
+              remarkPlugins={[remarkGfm, remarkBreaks]}
               components={{
                 img: MarkdownImage,
               }}
@@ -264,6 +268,24 @@ export function AtomEditor({ atomId, onClose, onSaved }: AtomEditorProps) {
             onTagsChange={(tags) => { setSelectedTags(tags); setIsDirty(true); }}
           />
         </div>
+        {/* Graph button (existing atoms with embeddings) */}
+        {isEditing && existingAtom?.embedding_status === 'complete' && (
+          <button
+            onClick={() => { closeDrawer(); openLocalGraph(atomId!); }}
+            className="shrink-0 p-1.5 text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors"
+            title="View neighborhood graph"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <circle cx="12" cy="12" r="3" strokeWidth={2} />
+              <circle cx="5" cy="8" r="2" strokeWidth={2} />
+              <circle cx="19" cy="8" r="2" strokeWidth={2} />
+              <circle cx="7" cy="18" r="2" strokeWidth={2} />
+              <circle cx="17" cy="18" r="2" strokeWidth={2} />
+              <path strokeLinecap="round" strokeWidth={2} d="M9.5 10.5L6.5 9M14.5 10.5L17.5 9M10 14L8 16.5M14 14L16 16.5" />
+            </svg>
+          </button>
+        )}
+
         {/* Delete button (editing existing atoms only) */}
         {isEditing && (
           showDeleteConfirm ? (
@@ -329,7 +351,7 @@ export function AtomEditor({ atomId, onClose, onSaved }: AtomEditorProps) {
             onChange={(e) => { setSourceUrl(e.target.value); setIsDirty(true); }}
             onBlur={() => setIsEditingUrl(false)}
             placeholder="Source URL"
-            className="shrink-0 w-[220px] px-3 py-1.5 text-sm text-right rounded-lg bg-white/8 backdrop-blur-sm border border-white/10 text-[var(--color-text-secondary)] placeholder:text-[var(--color-text-tertiary)] focus:outline-none focus:text-[var(--color-text-primary)] focus:border-white/20 focus:bg-white/12 transition-all duration-200"
+            className="glass-input shrink-0 w-[220px] px-3 py-1.5 text-sm text-right text-[var(--color-text-secondary)] placeholder:text-[var(--color-text-tertiary)] focus:text-[var(--color-text-primary)]"
           />
         )}
       </div>
