@@ -16,6 +16,14 @@ interface FlattenedTag {
   loadMoreRemaining?: number;
 }
 
+/** Check if a tag or any of its descendants has atoms */
+function hasAtoms(tag: TagWithCount): boolean {
+  if (tag.atom_count > 0) return true;
+  // children_total > loaded children means there are more on the server — assume non-empty
+  if (tag.children_total > tag.children.length) return true;
+  return tag.children.some(hasAtoms);
+}
+
 function flattenVisibleTags(
   tags: TagWithCount[],
   expandedTagIds: Record<string, boolean>,
@@ -23,6 +31,7 @@ function flattenVisibleTags(
 ): FlattenedTag[] {
   const result: FlattenedTag[] = [];
   for (const tag of tags) {
+    if (!hasAtoms(tag)) continue;
     result.push({ tag, level });
     if (tag.children.length > 0 && expandedTagIds[tag.id]) {
       const children = flattenVisibleTags(tag.children, expandedTagIds, level + 1);
